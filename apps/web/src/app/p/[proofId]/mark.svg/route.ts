@@ -28,5 +28,6 @@ export async function GET(request: Request, { params }: RouteContext<"/p/[proofI
   if (!isLikelyBot(request.headers.get("user-agent"))) {
     after(() => incrementMetric(db, record.id, "markImpressions").catch(() => {}));
   }
-  return new Response(renderMarkSvg(proofId, style, theme), { headers: SVG_HEADERS });
+  const status = record.status === "withdrawn" ? "withdrawn" : "registered";
+  return new Response(renderMarkSvg(proofId, style, theme, status), { headers: SVG_HEADERS });
 }

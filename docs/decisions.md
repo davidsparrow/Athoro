@@ -83,3 +83,22 @@ Vercel deploys from GitHub with the root directory `apps/web`. `pnpm vercel-buil
 ## 017: Attestations name the author profile, not the account
 
 Author attestation payloads (`authoro-author-attestation/1.0`) carry `author`, the opaque ID of the author profile (byline or pen name) that attested, rather than the account ID. The payload is published so anyone can recompute its hash. Publishing account IDs would let readers link an account's pen names once multiple pen names exist. The account link stays private in `author_attestations.user_id`.
+
+## 018: Versions and withdrawal
+
+- **New versions.** A new version of a work gets its own proof ID and record. A work has at most one pending version at a time, and a version byte-identical to an earlier one is refused. The work type is fixed by the work, while title, URL and description are per version, and the work's current metadata follows its newest registered version. Registering version N appends a `newer-version-registered` event to the previous record, which stays valid.
+- **Withdrawal** is owner-only, allowed only for registered records, and final. The record stays public with its reason (a fixed category plus an optional note) and a `withdrawn` event. Nothing is deleted.
+
+## 019: Identity verification stays in V1.25
+
+**Decided:** 2026-09-30, with the product owner.
+"Identity Verified" via Stripe Identity remains in its planned phase (V1.25, a paid Pro feature), not pulled into V0. Stripe Identity is billed per verification with no monthly fee (the first 50 are free), charged monthly from the Stripe balance. Groundwork already in place: attestations store a salted hash of the typed legal name, which can later be matched against the name Stripe verifies without publishing it.
+
+## 020: Versions and withdrawal in the product
+
+**Decided:** 2026-09-30; the withdrawn mark with the product owner.
+
+- **The withdrawn mark.** A withdrawn record's mark is still served, so embeds don't break, but it changes: the disc turns grey and loses its check, "Authoro" and the ID are muted, and "withdrawn" follows the ID. The icon style is the grey disc alone. It reaches embedding sites within the mark's 5-minute cache (decision 014). Like the rest of the mark, it's placeholder art.
+- **A new version starts from the latest one.** `/register?work=AUW-…` opens the wizard prefilled from the latest attested version, with the type locked. A document identical to an earlier version is caught in the browser, and a pending draft blocks the page with a link to it. `POST /api/v1/works/{id}/versions` carries over the `work` fields a request leaves out. A different `workType` is a `400`. Conflicts are `409 draft_exists` or `409 unchanged`, and they name the conflicting record's `proofId`.
+- **Older records point forward.** A record with newer versions shows a banner naming the newest registered version, or the newest one noted as withdrawn if every later version was withdrawn. The record's history describes `newer-version-registered` and `withdrawn` events in plain English. The API lists each event type's public details explicitly, so private event data can't leak.
+- **Author pages.** `/a/<handle>` lists the latest public version of each work with its version count and status. Hidden and unknown handles both return 404, so a hidden page doesn't confirm that a handle exists. Other spellings redirect to the lowercase handle. The page notes that the author wrote their own profile and that Authoro doesn't verify identity.

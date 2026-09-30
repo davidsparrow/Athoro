@@ -26,7 +26,16 @@ export const SOLID_MARK_COLORS = {
   dark: { disc: "#eceae4", letter: "#17191c", check: "#0f6e56" },
 } as const;
 
-/** The solid mark as a standalone SVG fragment in a 32-unit box. */
-export function solidMarkSvg(colors: { disc: string; letter: string; check: string }): string {
-  return `<circle cx="16" cy="16" r="16" fill="${colors.disc}"/><path d="${SOLID_MARK.letter}" stroke="${colors.letter}" stroke-width="${SOLID_MARK.strokeWidth}"/><path d="${SOLID_MARK.check}" stroke="${colors.check}" stroke-width="${SOLID_MARK.strokeWidth}"/>`;
+/** A withdrawn record's mark: a muted disc and no check. */
+export const WITHDRAWN_MARK_COLORS = {
+  light: { disc: "#a3a7ae", letter: "#ffffff", check: null },
+  dark: { disc: "#6f747c", letter: "#17191c", check: null },
+} as const;
+
+/** The solid mark as a standalone SVG fragment in a 32-unit box. A null check draws the bare A. */
+export function solidMarkSvg(colors: { disc: string; letter: string; check: string | null }): string {
+  const check = colors.check
+    ? `<path d="${SOLID_MARK.check}" stroke="${colors.check}" stroke-width="${SOLID_MARK.strokeWidth}"/>`
+    : "";
+  return `<circle cx="16" cy="16" r="16" fill="${colors.disc}"/><path d="${SOLID_MARK.letter}" stroke="${colors.letter}" stroke-width="${SOLID_MARK.strokeWidth}"/>${check}`;
 }

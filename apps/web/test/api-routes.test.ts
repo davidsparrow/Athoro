@@ -3,10 +3,12 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { GET as getProof, OPTIONS as proofOptions } from "@/app/api/v1/proofs/[proofId]/route";
 import { POST as verify } from "@/app/api/v1/verify/route";
+import { POST as createVersion } from "@/app/api/v1/works/[workId]/versions/route";
 import { GET as listWorks, POST as createWork } from "@/app/api/v1/works/route";
 import { apiRateLimits, user } from "@/db/schema";
 import { createApiKey } from "@/lib/api/keys";
 import { PUBLIC_RATE_LIMIT } from "@/lib/api/http";
+import { finalizeRegistration, withdrawRecord } from "@/lib/registration";
 import { hashIp } from "@/lib/request-ip";
 import { createAuthor, registerWork, sampleInput, testDatabase } from "./helpers";
 
@@ -21,6 +23,7 @@ function request(path: string, init: RequestInit & { ip?: string } = {}) {
 }
 
 const proofParams = (proofId: string) => ({ params: Promise.resolve({ proofId }) });
+const workParams = (workId: string) => ({ params: Promise.resolve({ workId }) });
 
 describe.skipIf(!db)("API v1", () => {
   const d = db!;
@@ -59,6 +62,27 @@ describe.skipIf(!db)("API v1", () => {
       const text = JSON.stringify(body);
       expect(text).not.toContain(author.userId);
       expect(text).not.toMatch(/salt|ownerId|userId/i);
+    });
+
+    it("reports a withdrawal with its reason", async () => {
+      const author = await createAuthor(d);
+      const proofId = await registerWork(d, author, TEXT);
+      await withdrawRecord(d, {
+        proofId,
+        userId: author.userId,
+        reason: "erroneous-submission",
+        note: "Registered twice.",
+      });
+      const body = await (await getProof(request(`/api/v1/proofs/${proofId}`), proofParams(proofId))).json();
+      expect(body).toMatchObject({
+        status: "withdrawn",
+        withdrawn: { reason: "Registered by mistake: Registered twice." },
+        events: [
+          { type: "registered" },
+          { type: "withdrawn", reason: "erroneous-submission", note: "Registered twice." },
+        ],
+      });
+      expect(JSON.stringify(body.events)).not.toContain(author.userId);
     });
 
     it("answers CORS preflights", async () => {
@@ -172,7 +196,7 @@ describe.skipIf(!db)("API v1", () => {
       const response = await post(key, { ...input, envelope });
       expect(response.status).toBe(201);
       const body = await response.json();
-      expect(body).toMatchObject({ object: "registration", status: "pending_attestation" });
+      expect(body).toMatchObject({ object: "registration", version: 1, status: "pending_attestation" });
       expect(body.attestUrl).toBe(`${BASE}/attest/${body.proofId}`);
       // Not public until the author attests.
       expect(
@@ -197,6 +221,112 @@ describe.skipIf(!db)("API v1", () => {
       const response = await post(await keyFor(userId), await sampleInput(TEXT));
       expect(response.status).toBe(409);
       expect((await response.json()).error.code).toBe("profile_required");
+    });
+  });
+
+  describe("POST /api/v1/works/{id}/versions", () => {
+    const post = (key: string | null, workId: string, body: unknown) =>
+      createVersion(
+        request(`/api/v1/works/${workId}/versions`, {
+          method: "POST",
+          headers: key ? { Authorization: `Bearer ${key}` } : {},
+          body: JSON.stringify(body),
+        }),
+        workParams(workId),
+      );
+
+    /** A registered version 1 and an API key for its author. */
+    async function registeredWork(author?: Awaited<ReturnType<typeof createAuthor>>) {
+      const owner = author ?? (await createAuthor(d));
+      const proofId = await registerWork(d, owner, TEXT);
+      const proof = await (await getProof(request(`/api/v1/proofs/${proofId}`), proofParams(proofId))).json();
+      const { key } = await createApiKey(d, owner.userId, "Test");
+      return { owner, key, proofId, workId: proof.work.id as string };
+    }
+
+    it("requires an API key and a well-formed work ID", async () => {
+      const { key, workId } = await registeredWork();
+      expect((await post(null, workId, {})).status).toBe(401);
+      const bad = await post(key, "hello", {});
+      expect(bad.status).toBe(400);
+      expect((await bad.json()).error.code).toBe("invalid_id");
+    });
+
+    it("prepares the next version, carrying over details the body leaves out", async () => {
+      const { owner, key, proofId: v1, workId } = await registeredWork();
+      const { document, disclosure } = await sampleInput("The future of independent software is smaller.");
+      const response = await post(key, workId.toLowerCase(), {
+        work: { description: "Revised for the print edition." },
+        document,
+        disclosure,
+      });
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body).toMatchObject({
+        object: "registration",
+        workId,
+        version: 2,
+        status: "pending_attestation",
+        attestUrl: `${BASE}/attest/${body.proofId}`,
+      });
+      expect(response.headers.get("location")).toBe(body.attestUrl);
+
+      // Pending until the author attests; then version 1's history points at it.
+      expect(
+        (await getProof(request(`/api/v1/proofs/${body.proofId}`), proofParams(body.proofId))).status,
+      ).toBe(404);
+      await finalizeRegistration(d, { proofId: body.proofId, userId: owner.userId, typedName: "Jane Smith" });
+      const v2 = await (
+        await getProof(request(`/api/v1/proofs/${body.proofId}`), proofParams(body.proofId))
+      ).json();
+      expect(v2).toMatchObject({
+        version: { number: 2 },
+        work: {
+          id: workId,
+          title: "The Future of Independent Software",
+          type: "essay",
+          description: "Revised for the print edition.",
+        },
+      });
+      const first = await (await getProof(request(`/api/v1/proofs/${v1}`), proofParams(v1))).json();
+      expect(first.events).toMatchObject([
+        { type: "registered" },
+        { type: "newer-version-registered", proofId: body.proofId, version: 2 },
+      ]);
+    });
+
+    it("409s while a draft is pending and for unchanged content", async () => {
+      const { key, proofId: v1, workId } = await registeredWork();
+      const unchanged = await post(key, workId, await sampleInput(TEXT));
+      expect(unchanged.status).toBe(409);
+      expect((await unchanged.json()).error).toMatchObject({ code: "unchanged", proofId: v1 });
+
+      const draft = await (await post(key, workId, await sampleInput("Revised."))).json();
+      const blocked = await post(key, workId, await sampleInput("Revised again."));
+      expect(blocked.status).toBe(409);
+      expect((await blocked.json()).error).toMatchObject({ code: "draft_exists", proofId: draft.proofId });
+    });
+
+    it("keeps the work type and validates the rest", async () => {
+      const { key, workId } = await registeredWork();
+      const input = await sampleInput("A new edition.");
+      const retyped = await post(key, workId, { ...input, work: { ...input.work, workType: "poem" } });
+      expect(retyped.status).toBe(400);
+      expect((await retyped.json()).error.details[0]).toMatch(/^work\.workType: /);
+      const invalid = await post(key, workId, { document: { contentHash: "md5:abc" } });
+      expect(invalid.status).toBe(400);
+      expect((await invalid.json()).error.code).toBe("invalid_request");
+    });
+
+    it("404s works that don't exist or belong to someone else", async () => {
+      const { workId } = await registeredWork();
+      const { key: otherKey } = await registeredWork(await createAuthor(d, "other"));
+      const input = await sampleInput("Not mine.");
+      for (const id of [workId, "AUW-ZZZZZZZZ"]) {
+        const response = await post(otherKey, id, input);
+        expect(response.status).toBe(404);
+        expect((await response.json()).error.code).toBe("not_found");
+      }
     });
   });
 });

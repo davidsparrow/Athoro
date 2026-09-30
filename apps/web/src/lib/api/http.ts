@@ -24,6 +24,8 @@ export type ApiErrorCode =
   | "unauthorized"
   | "rate_limited"
   | "profile_required"
+  | "draft_exists"
+  | "unchanged"
   | "payload_too_large";
 
 export function json(data: unknown, init: { status?: number; headers?: HeadersInit } = {}): Response {
@@ -36,10 +38,18 @@ export function apiError(
   status: number,
   code: ApiErrorCode,
   message: string,
-  extra: { details?: string[]; headers?: HeadersInit } = {},
+  /** `proofId` names the record behind a conflict. */
+  extra: { details?: string[]; proofId?: string; headers?: HeadersInit } = {},
 ): Response {
   return json(
-    { error: { code, message, ...(extra.details?.length ? { details: extra.details } : {}) } },
+    {
+      error: {
+        code,
+        message,
+        ...(extra.details?.length ? { details: extra.details } : {}),
+        ...(extra.proofId ? { proofId: extra.proofId } : {}),
+      },
+    },
     { status, headers: extra.headers },
   );
 }

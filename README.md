@@ -6,7 +6,7 @@ Authoro verifies claims. It doesn't manufacture certainty: it never labels a wor
 
 ## Status
 
-Building **V0, the public registry loop**: register → fingerprint → attest → mark → resolve. Progress and the chunk plan are in [`docs/roadmap.md`](./docs/roadmap.md), and design decisions are logged in [`docs/decisions.md`](./docs/decisions.md).
+**V0, the public registry loop**, is complete: register → fingerprint → attest → mark → resolve, plus new versions, withdrawal and public author pages. Progress and the chunk plan are in [`docs/roadmap.md`](./docs/roadmap.md), and design decisions are logged in [`docs/decisions.md`](./docs/decisions.md).
 
 ## Repository layout
 
