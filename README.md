@@ -35,6 +35,8 @@ The integration tests need a separate database, set by `TEST_DATABASE_URL` in `a
 docker compose exec postgres createdb -U authoro authoro_test
 ```
 
+Deploying: see [`docs/deploy.md`](./docs/deploy.md) (Vercel + Neon Postgres + Resend).
+
 ## Scripts
 
 | Command                        | Does                                                           |

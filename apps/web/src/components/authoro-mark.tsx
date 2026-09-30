@@ -1,14 +1,18 @@
+import { OPEN_RING_MARK, SOLID_MARK } from "@/lib/mark-geometry";
+
 /**
- * The Authoro A-mark: an A whose crossbar is a check, inside an open circle.
- * Drawn on a 32-unit grid with heavy strokes so it stays legible at 12–16px.
- * Placeholder artwork until the final mark is designed.
+ * The Authoro A-mark. `solid` is the canonical mark (a seal with an A whose
+ * crossbar is a check); `open` is the large expressive variant. Colors follow
+ * the site theme through CSS variables.
  */
 export function AuthoroMark({
   size = 20,
+  variant = "solid",
   title,
   className,
 }: {
   size?: number;
+  variant?: "solid" | "open";
   title?: string;
   className?: string;
 }) {
@@ -21,14 +25,23 @@ export function AuthoroMark({
       role={title ? "img" : undefined}
       aria-hidden={title ? undefined : true}
       fill="none"
-      stroke="currentColor"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
       {title ? <title>{title}</title> : null}
-      <circle cx="16" cy="16" r="14.5" strokeWidth="2" />
-      <path d="M9.5 24 16 7l6.5 17" strokeWidth="2.6" />
-      <path d="m11.6 18.2 3 2.8 6-6.4" strokeWidth="2.6" className="text-accent" stroke="currentColor" />
+      {variant === "solid" ? (
+        <>
+          <circle cx="16" cy="16" r="16" fill="var(--ink)" />
+          <path d={SOLID_MARK.letter} stroke="var(--paper)" strokeWidth={SOLID_MARK.strokeWidth} />
+          <path d={SOLID_MARK.check} stroke="var(--mark-check)" strokeWidth={SOLID_MARK.strokeWidth} />
+        </>
+      ) : (
+        <>
+          <path d={OPEN_RING_MARK.ring} stroke="var(--ink)" strokeWidth={OPEN_RING_MARK.ringWidth} />
+          <path d={OPEN_RING_MARK.letter} stroke="var(--ink)" strokeWidth={OPEN_RING_MARK.strokeWidth} />
+          <path d={OPEN_RING_MARK.check} stroke="var(--accent)" strokeWidth={OPEN_RING_MARK.strokeWidth} />
+        </>
+      )}
     </svg>
   );
 }

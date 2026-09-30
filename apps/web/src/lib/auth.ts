@@ -6,6 +6,7 @@ import { after } from "next/server";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { serverEnv } from "@/env";
+import { deploymentOrigins } from "@/lib/app-url";
 import { recordAudit } from "@/lib/audit";
 import { sendEmail, type EmailMessage } from "@/lib/email/send";
 import { magicLinkEmail, resetPasswordEmail, verificationEmail } from "@/lib/email/templates";
@@ -27,6 +28,8 @@ function requestHeaders(context: { headers?: Headers; request?: Request } | null
 export const auth = betterAuth({
   appName: "Authoro",
   baseURL: serverEnv().NEXT_PUBLIC_APP_URL,
+  // Preview deployments are reachable at both their branch and deployment URLs.
+  trustedOrigins: deploymentOrigins(process.env),
   secret: serverEnv().BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: "pg", schema }),
 

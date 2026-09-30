@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke-linecap="round" stroke-linejoin="round">
   <style>
-    .ink { stroke: #16181d; } .check { stroke: #0f6e56; }
-    @media (prefers-color-scheme: dark) { .ink { stroke: #eceae4; } .check { stroke: #4cc9a0; } }
+    .disc { fill: #16181d; } .letter { stroke: #ffffff; } .check { stroke: #4cc9a0; }
+    @media (prefers-color-scheme: dark) { .disc { fill: #eceae4; } .letter { stroke: #17191c; } .check { stroke: #0f6e56; } }
   </style>
-  <circle class="ink" cx="16" cy="16" r="14.5" stroke-width="2.4"/>
-  <path class="ink" d="M9.5 24 16 7l6.5 17" stroke-width="3"/>
-  <path class="check" d="m11.6 18.2 3 2.8 6-6.4" stroke-width="3"/>
+  <circle class="disc" cx="16" cy="16" r="16"/>
+  <path class="letter" d="M9 24.6 16 6.8l7 17.8" stroke-width="3.5"/>
+  <path class="check" d="m10.9 18.4 3.6 3.4 9.2-10.2" stroke-width="3.5"/>
 </svg>

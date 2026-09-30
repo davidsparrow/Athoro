@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { resolveAppUrl } from "./src/lib/app-url";
 
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -7,6 +8,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Inlined into server and client bundles; see src/lib/app-url.ts.
+  env: { NEXT_PUBLIC_APP_URL: resolveAppUrl(process.env) },
   // The open core library ships TypeScript source.
   transpilePackages: ["@authoro/core"],
   typedRoutes: true,
