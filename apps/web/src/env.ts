@@ -16,7 +16,14 @@ let cached: ServerEnv | undefined;
 /** Validated server environment. Throws on first use if configuration is missing. */
 export function serverEnv(): ServerEnv {
   if (cached) return cached;
-  const result = serverEnvSchema.safeParse(process.env);
+  // Explicit references so Next can inline build-time values such as NEXT_PUBLIC_APP_URL.
+  const result = serverEnvSchema.safeParse({
+    DATABASE_URL: process.env.DATABASE_URL,
+    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    RESEND_API_KEY: process.env.RESEND_API_KEY || undefined,
+    EMAIL_FROM: process.env.EMAIL_FROM || undefined,
+  });
   if (!result.success) {
     const problems = result.error.issues.map((issue) => `  ${issue.path.join(".")}: ${issue.message}`);
     throw new Error(`Invalid server environment:\n${problems.join("\n")}\nSee apps/web/.env.example.`);

@@ -43,26 +43,31 @@ const NEVER_SAYS = [
 export default function Home() {
   return (
     <>
-      <section className="mx-auto max-w-5xl px-4 pt-20 pb-16 sm:px-6 sm:pt-28">
-        <p className="text-sm font-medium tracking-wide text-accent uppercase">Public provenance registry</p>
-        <h1 className="mt-4 max-w-3xl font-serif text-5xl leading-[1.05] tracking-tight sm:text-7xl">
-          The record behind the work.
-        </h1>
-        <p className="mt-6 max-w-2xl text-lg leading-relaxed text-ink-muted">
-          Authoro is a public registry for creative work. Authors, and the tools they write with, record
-          verifiable evidence of how a work was made. Readers click the mark and see it.
-        </p>
-        <div className="mt-10 flex flex-wrap items-center gap-4">
-          <Link href="/sign-up" className={buttonClass("primary", "h-11 px-5")}>
-            Register your work
-          </Link>
-          <div className="inline-flex items-center gap-3 rounded-full border border-line bg-paper-raised py-2 pr-5 pl-3 text-sm shadow-sm">
-            <AuthoroMark size={22} />
-            <span className="text-ink-muted">
-              authoro.net/p/<span className="font-mono text-ink">AU-7K3F92</span>
-            </span>
+      <section className="mx-auto grid max-w-5xl items-center gap-12 px-4 pt-20 pb-16 sm:px-6 sm:pt-28 lg:grid-cols-[1fr_auto]">
+        <div>
+          <p className="text-sm font-medium tracking-wide text-accent uppercase">
+            Public provenance registry
+          </p>
+          <h1 className="mt-4 max-w-3xl font-serif text-5xl leading-[1.05] tracking-tight sm:text-7xl">
+            The record behind the work.
+          </h1>
+          <p className="mt-6 max-w-2xl text-lg leading-relaxed text-ink-muted">
+            Authoro is a public registry for creative work. Authors, and the tools they write with, record
+            verifiable evidence of how a work was made. Readers click the mark and see it.
+          </p>
+          <div className="mt-10 flex flex-wrap items-center gap-4">
+            <Link href="/sign-up" className={buttonClass("primary", "h-11 px-5")}>
+              Register your work
+            </Link>
+            <div className="inline-flex items-center gap-3 rounded-full border border-line bg-paper-raised py-2 pr-5 pl-3 text-sm shadow-sm">
+              <AuthoroMark size={22} />
+              <span className="text-ink-muted">
+                authoro.net/p/<span className="font-mono text-ink">AU-7K3F92</span>
+              </span>
+            </div>
           </div>
         </div>
+        <AuthoroMark size={240} variant="open" className="hidden lg:block" />
       </section>
 
       <section className="mx-auto max-w-5xl px-4 pb-16 sm:px-6">

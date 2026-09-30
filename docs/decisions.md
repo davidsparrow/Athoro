@@ -70,3 +70,12 @@ Security-relevant events (account created, session created, password reset or se
 - **Canonical IDs.** `/p/au-7k3f92` permanently redirects to `/p/AU-7K3F92`. The mark and all snippets link with `?ref=mark`.
 - **The mark image** contains only the validated ID, never user text. It is served with a restrictive CSP, CORS open, and 5-minute caching so impression counts stay meaningful and withdrawals propagate. Styles: `badge` (default) and `icon`; themes: `light` and `dark`.
 - **Metrics are aggregate daily counters** per record (`proof_metrics_daily`): mark impressions, mark clicks, record views and copies checked. No cookies, IPs or visitor IDs are stored. Owner views and obvious bots (including headless browsers) aren't counted. The owner sees totals on the record and the dashboard.
+
+## 015: The Authoro Mark (refined placeholder)
+
+Five candidates were compared at 12 to 128px in both themes. The canonical mark is now a **solid disc** with the A knocked out and a check for its crossbar that overshoots the right leg. It keeps a clear silhouette at 12 to 16px, in bylines, in the favicon and in the embeddable badge. The check takes the opposite theme's green so it stays visible on the disc. An **open-ring** variant, whose check escapes the circle, is the expressive large-size form (landing page). The geometry lives in `apps/web/src/lib/mark-geometry.ts`, and a test keeps the static favicon in sync. It is still placeholder art pending a final design.
+
+## 016: Deployment on Vercel
+
+**Decided:** 2026-09-30, with the product owner.
+Vercel deploys from GitHub with the root directory `apps/web`. `pnpm vercel-build` applies migrations before building: always for production, and for previews only when `AUTHORO_MIGRATE_PREVIEWS=true`, i.e. when each preview has its own database branch. Without `NEXT_PUBLIC_APP_URL`, the public origin comes from Vercel's system variables (the production domain or the preview's branch URL), and Better Auth trusts every origin a deployment answers on. Previews without a Resend key log emails instead of refusing to send. See `docs/deploy.md`.

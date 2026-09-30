@@ -11,6 +11,8 @@
   --accent-soft: #e3f1ec;
   --caution: #8a5a00;
   --caution-soft: #fbf0dc;
+  /* The mark's check sits on an ink disc, so it takes the opposite theme's green. */
+  --mark-check: #4cc9a0;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -25,6 +27,7 @@
     --accent-soft: #10261f;
     --caution: #e0b050;
     --caution-soft: #2a2110;
+    --mark-check: #0f6e56;
   }
 }
 
