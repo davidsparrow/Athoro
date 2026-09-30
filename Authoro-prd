@@ -1,1 +1,2289 @@
 
+Authoro PRD
+
+App Idea Comparison
+
+Absolutely. I’d structure Authoro so the first version proves the registry + proof-mark loop before you spend time on deep editor integrations.
+Authoro
+Public Provenance Registry for Authorship and Creative Work
+Working domain: authoro.net Working product family: Authoro Registry, Authoro Proof, Authoro Mark, Authoro API, Authoro MCP Status: Concept PRD Core thesis: Authoro does not need to observe every work being created. It becomes the neutral public registry where trusted systems submit evidence about how a work was created.
+
+1. Product Summary
+Authoro is a public provenance registry for creative works.
+Its job is not to decide whether something is “AI” or “human.”
+Its job is to answer:
+What evidence exists about who created this work, how it was created, when it was created, what tools participated, and whether the evidence can be verified?
+Any compatible editor, recorder, publisher, AI system, authorship-verification service, institution, or individual can submit structured evidence to Authoro.
+Authoro normalizes that evidence into a canonical Proof Record.
+Every registered work receives:
+* a permanent Authoro ID
+* a canonical public proof URL
+* a cryptographically bound document fingerprint
+* one or more signed provenance attestations
+* an Authoro Proof Mark that can be embedded beside the published work
+Example:
+authoro.net/p/AU-7K3F92
+A reader clicking the Authoro Mark sees the evidence behind that specific version of the work.
+Authoro therefore acts less like an editor and more like a combination of:
+* DOI registry
+* SSL certificate authority/resolver
+* provenance ledger
+* Creative Commons-style recognizable mark
+* trust infrastructure for authorship
+
+2. Problem
+Generative AI has made content-origin questions increasingly difficult.
+Existing systems generally fall into four categories.
+AI detectors
+Attempt to infer whether text was AI-generated from the final artifact.
+Problem:
+Inference is probabilistic and can produce false positives and negatives.
+Writing-process recorders
+Record keystrokes, revisions, pastes, writing sessions, and related telemetry.
+Problem:
+Each platform produces its own isolated evidence.
+Publisher/editor histories
+Google Docs, Word, CMS platforms, and other editors maintain revision information.
+Problem:
+The history usually stays inside the originating platform.
+Provenance standards
+Systems such as C2PA provide formats for carrying signed provenance information.
+Problem:
+Ordinary readers still need a recognizable place to resolve and inspect provenance.
+There is no obvious consumer destination equivalent to:
+“Click here to see the evidence behind this work.”
+Authoro intends to become that destination.
+
+3. Product Principle
+Authoro should verify claims rather than manufacture certainty.
+The product must avoid statements such as:
+“This document was definitely written by a human.”
+Instead it should display claims such as:
+Continuous composition was observed by Provider X.
+Provider Y reported 92% manually entered text.
+Publisher Z confirmed publication on this date.
+The final publication matches the registered SHA-256 fingerprint.
+The author self-attested that generative AI was used for editing only.
+Authoro records who asserted what and whether the assertion itself can be authenticated.
+
+4. Primary Product Loop
+The entire initial product can be reduced to:
+Submit → Verify → Register → Mark → Resolve
+Submit
+An author or third-party system submits:
+* work
+* work fingerprint
+* metadata
+* provenance evidence
+* issuer identity
+Verify
+Authoro validates:
+* evidence format
+* issuer identity
+* cryptographic signature when available
+* document fingerprint
+* required metadata
+* schema compatibility
+Register
+Authoro creates:
+* Authoro Work ID
+* version ID
+* proof record
+* permanent URL
+Mark
+Authoro returns an embeddable Proof Mark.
+Example:
+◉ Authoro
+Resolve
+A reader clicks the mark and reaches the canonical Authoro Proof page.
+
+5. Key Product Objects
+Work
+A conceptual creative work.
+Examples:
+* article
+* essay
+* book chapter
+* research paper
+* blog post
+* course lesson
+* code project
+* image
+* video
+* audio
+A work may contain multiple versions.
+
+Work Version
+A specific immutable state of a work.
+Every published version receives its own fingerprint.
+Example:
+AU-WORK-84KF
+could contain:
+AU-V1-118A
+AU-V2-29CC
+AU-V3-44EA
+Updating a work never silently replaces historical evidence.
+
+Proof Envelope
+The normalized provenance package Authoro accepts.
+Conceptual schema:
+{
+  "schema": "authoro-proof/1.0",
+  "issuer": {
+    "id": "issuer:writermark",
+    "name": "Writermark"
+  },
+  "work": {
+    "title": "Example Article",
+    "hash": "sha256:...",
+    "mediaType": "text/html"
+  },
+  "author": {
+    "displayName": "Jane Smith"
+  },
+  "timeline": {
+    "startedAt": "...",
+    "completedAt": "..."
+  },
+  "evidence": {
+    "method": "continuous-composition",
+    "manualCharacters": 12540,
+    "pastedCharacters": 922,
+    "revisionEvents": 481,
+    "sessions": 6
+  },
+  "signature": "..."
+}
+Not every field is mandatory.
+Providers may attach richer evidence.
+
+Evidence Provider
+Any entity capable of submitting provenance evidence.
+Examples:
+* Authoro Recorder
+* Grammarly
+* Writermark
+* writing apps
+* WordPress plugins
+* publishers
+* universities
+* AI platforms
+* browser extensions
+Each provider receives a persistent Authoro Issuer ID.
+
+Attestation
+One evidence claim concerning a work.
+Example:
+Writermark observed continuous composition between September 28 and September 30.
+Another:
+WordPress confirmed publication at 10:42 AM.
+Another:
+Claude generated 843 characters incorporated into the document.
+Multiple attestations can exist on one Work Version.
+
+Authoro ID
+Permanent public identifier.
+Example:
+AU-7K3F92
+Short enough to print.
+Unique enough to resolve globally.
+
+Authoro Mark
+Small embeddable visual trust mark.
+Possible forms:
+◉
+A◉
+Authoro ◉
+The public-facing mark should remain subtle.
+Hover:
+View creation record
+Click:
+authoro.net/p/AU-7K3F92
+
+6. Evidence Classes
+Authoro should make evidence quality explicit without pretending all proofs are equal.
+Class A — Continuous Observed Evidence
+Creation process recorded continuously by an approved integration.
+Examples:
+* Authoro native recorder
+* Writermark recorder
+* trusted editor SDK
+Can contain:
+* typing events
+* paste events
+* revision events
+* sessions
+* timestamps
+* AI events
+
+Class B — Platform History Evidence
+Imported from an editor's revision history.
+Examples:
+* Word
+* Google Docs
+* CMS revision logs
+Useful but potentially less complete than continuous observation.
+
+Class C — Publisher Attestation
+A publisher confirms:
+* document
+* author
+* publication timestamp
+* final content hash
+
+Class D — Identity Attestation
+Confirms something about contributor identity.
+Possible providers:
+* publisher
+* school
+* professional organization
+* identity verification service
+
+Class E — AI Attestation
+An AI system or integration reports its participation.
+Example:
+Claude generated replacement text covering characters 8,422–8,917.
+
+Class F — Self-Attestation
+Submitted directly by the creator.
+Authoro displays this clearly as:
+Author supplied
+rather than treating it as independently observed proof.
+
+7. Public Proof Page
+The Authoro Proof page is the centerpiece of the product.
+Example:
+Creation Record
+The Future of Independent Software
+Jane Smith
+Registered September 30, 2026
+Authoro ID
+AU-7K3F92
+Integrity
+✓ Registered document fingerprint valid ✓ Evidence package signatures valid ✓ Published version matches registered work
+Evidence
+Writermark
+Continuous writing process observed
+September 27–30
+3h 42m active composition 5 writing sessions 18,441 manually entered characters 1,114 pasted characters 823 revision events
+WordPress
+Publication confirmed
+September 30, 10:42 AM
+Anthropic Claude
+AI assistance disclosed
+622 characters incorporated through rewrite operations
+Composition
+Human entered — 88%
+Imported/source material — 7%
+AI-assisted — 5%
+Author disclosure
+AI was used for copyediting and shortening selected passages.
+Version
+Version 1
+Fingerprint:
+sha256:93ab8e...
+
+8. Privacy
+Raw creation history should not be public by default.
+Authors need control.
+Public visibility presets:
+Minimal
+Shows:
+* work
+* author
+* date
+* providers
+* integrity status
+Standard
+Adds:
+* session count
+* manual/paste/AI proportions
+* high-level timeline
+* evidence methods
+Detailed
+Adds:
+* expanded event statistics
+* provider detail
+* version history
+Full Replay
+Author explicitly publishes revision replay/history.
+Authoro should never assume deletion history is public.
+
+9. V0 — Registry Prototype
+Goal
+Prove that users understand and value:
+Proof Mark → Canonical public record
+Do not build complex recording technology yet.
+User
+Independent writers, bloggers, researchers, publishers, IndieOps-style creators.
+Features
+Account
+* email signup
+* author profile
+* optional public author page
+Register Work
+User provides:
+* title
+* author name
+* URL
+* document/file
+* optional description
+* optional evidence JSON
+Authoro calculates the document fingerprint.
+Self-Attestation
+Creator selects:
+* fully manually composed
+* AI-assisted
+* AI-generated sections
+* collaborative
+* imported from another system
+Clearly labeled as self-attestation.
+Proof Record
+Generate:
+* Authoro ID
+* permanent public URL
+* timestamp
+* document hash
+* metadata
+Proof Mark
+Provide:
+* simple HTML embed
+* SVG mark
+* plain text link
+* WordPress-ready snippet
+Verification
+User can upload/paste a document later.
+Authoro calculates its hash and determines whether it matches the registered version.
+V0 Deliverables
+Web application.
+Public proof pages.
+Registration workflow.
+Basic API endpoint.
+Proof Mark.
+Document fingerprinting.
+Explicitly NOT V0
+* browser extension
+* editor
+* Word integration
+* Google Docs integration
+* C2PA implementation
+* blockchain
+* keystroke capture
+* public scoring
+* AI detection
+
+10. V1 — Evidence Registry
+Goal
+Allow external apps to become evidence providers.
+This is where Authoro starts becoming infrastructure.
+Authoro Proof API
+Core endpoints:
+POST /works
+POST /works/{id}/versions
+POST /proofs
+POST /attestations
+GET /proofs/{id}
+POST /verify
+GET /issuers/{id}
+Issuer Accounts
+Organizations can register as evidence issuers.
+Issuer information includes:
+* organization
+* domain
+* contact
+* signing keys
+* supported evidence types
+* verification status
+Signed Proof Envelopes
+Support cryptographically signed provenance claims.
+Multiple Evidence Sources
+One document can contain claims from multiple issuers.
+Example:
+Writermark
+* 
+WordPress
+* 
+Claude
+* 
+Author
+Public Provider Attribution
+Never flatten provider claims into anonymous Authoro claims.
+Display:
+Reported by Writermark
+Confirmed by WordPress
+Declared by author
+Version Registry
+Full immutable document version system.
+Verification API
+Other websites can ask:
+Is this Authoro ID valid?
+Does this document hash match?
+Which issuers supplied evidence?
+
+11. V1.5 — WordPress + Browser Recorder
+Goal
+Create first-party evidence without requiring authors to change editors.
+WordPress Plugin
+Capabilities:
+* Authoro account connection
+* automatically detect draft creation
+* record Gutenberg changes
+* identify paste events where possible
+* create checkpoints
+* register publication
+* insert Authoro Mark automatically
+Publishing UX:
+Publish
+☑ Register this version with Authoro
+Public Authoro record generated immediately.
+
+Browser Extension
+Initial support:
+* standard textareas
+* contenteditable elements
+* common web editors
+Recorder tracks:
+* insertions
+* deletions
+* paste events
+* session durations
+* changes
+Data should be locally batched before transmission.
+The extension should never behave as a keylogger outside explicitly enabled documents/editors.
+Clear visual indicator:
+● Authoro recording
+
+12. V2 — Authoro MCP + Developer Ecosystem
+Goal
+Make provenance registration available to agents and AI-native applications.
+Authoro MCP
+Potential tools:
+register_work
+create_version
+submit_attestation
+submit_ai_contribution
+get_proof
+verify_work
+get_authoro_mark
+finalize_publication
+Example
+Claude helps edit an article.
+Claude calls:
+submit_ai_contribution
+Payload includes:
+* Authoro work ID
+* modified range
+* operation
+* generated content fingerprint
+* timestamp
+* model/provider identity
+The publication's proof record can now say:
+Anthropic Claude assisted with three revisions totaling 614 characters.
+This is much better than trying to detect Claude afterward.
+
+SDK
+Packages:
+@authoro/web
+@authoro/node
+@authoro/react
+Potential future:
+Python
+PHP
+Swift
+.NET
+Developer Dashboard
+Developers can:
+* create API keys
+* register issuer
+* rotate signing keys
+* inspect submissions
+* test Proof Envelopes
+* view usage
+* generate sample implementations
+
+13. V2 — Open Authoro Evidence Profile
+Authoro should publish the evidence format.
+Goal:
+Anyone can generate an Authoro-compatible proof package without requiring proprietary Authoro recording software.
+The specification defines:
+* identifiers
+* work hashes
+* versions
+* issuers
+* timestamps
+* evidence claims
+* signatures
+* AI contribution records
+* contributor records
+* publication records
+Authoro's competitive advantage should not depend on hiding the schema.
+The value is:
+* trusted registry
+* recognizable mark
+* verification
+* issuer ecosystem
+* permanent resolution
+* reputation
+
+14. V2 — C2PA Compatibility
+Investigate mapping Authoro Evidence Profiles onto C2PA concepts.
+Authoro should avoid unnecessarily inventing:
+* signing systems
+* identity systems
+* provenance packaging
+* claim formats
+where established standards already work.
+Possible model:
+Authoro = application/profile layer
+C2PA = underlying provenance package
+W3C Verifiable Credentials = identity/attestation layer
+Authoro ID = public resolver
+Authoro.net = public registry
+
+15. V3 — Authoro Trust Network
+Goal
+Become the neutral discovery and verification layer for creative provenance.
+Trusted Issuer Directory
+Public pages for evidence providers.
+Example:
+Writermark
+Issuer since 2027
+Proofs registered: 3.2M
+Evidence types:
+Continuous composition Editing telemetry
+Signing key status:
+Verified
+
+Author Profiles
+Optional public profile:
+authoro.net/a/jane-smith
+Contains:
+* verified identity claims
+* registered works
+* publishers
+* provenance history
+Participation optional.
+Authoro should not require public identity.
+Pseudonymous authors must remain supported.
+
+Publisher Profiles
+Organizations can register publications.
+Example:
+authoro.net/publisher/examplemag
+Shows:
+* verified domain
+* registered publications
+* evidence policies
+* issuing keys
+
+16. V3 — Rich Provenance Graph
+Instead of thinking of provenance as one score, represent it as a graph.
+Example:
+                    Jane Smith
+                         │
+                    identity
+                         │
+        ┌────────────────┴───────────────┐
+        │                                │
+   Writermark                       WordPress
+        │                                │
+composition evidence               publication
+        │                                │
+        └──────────── Work ──────────────┘
+                         │
+                       Claude
+                         │
+                  editing assistance
+This makes mixed-authorship understandable.
+
+17. V3 — Version Relationships
+Support:
+* derives-from
+* translation-of
+* edited-version-of
+* excerpt-from
+* adaptation-of
+* AI-transformed-from
+This could become extremely valuable for:
+* journalism
+* academic publishing
+* books
+* syndication
+* republishing
+* licensed content
+* AI transformations
+
+18. Potential Future Media Expansion
+Authoro should begin with text but avoid architectural assumptions that make it permanently text-only.
+Future work types:
+* images
+* video
+* audio
+* code
+* presentations
+* datasets
+* courses
+The broader long-term promise:
+The record behind the work.
+
+19. Assurance Language
+Authoro should avoid a simplistic trust score.
+No:
+92/100 Human
+No:
+Definitely written by Jane
+Instead use concrete evidence states.
+Examples:
+Creation Process Observed
+Strong evidence exists documenting creation.
+Platform History Supplied
+A trusted platform supplied revision history.
+Publication Confirmed
+Publisher confirmed this exact version.
+Author Attested
+Creator provided this claim.
+AI Participation Recorded
+A compatible AI provider submitted contribution evidence.
+Final Artifact Verified
+Current artifact matches the registered fingerprint.
+
+20. Fraud Model
+Authoro cannot guarantee intellectual authorship.
+Threats include:
+* one person typing another person's work
+* AI output manually retyped
+* simulated typing
+* compromised issuer credentials
+* falsified timestamps
+* unauthorized account access
+* collusion
+* malicious editor integrations
+Authoro should therefore always describe provenance evidence precisely.
+A valid proof means:
+This signed evidence was recorded and has not been altered.
+It does not inherently mean:
+Every underlying claim is objectively true.
+
+21. Security Requirements
+Required:
+* immutable registered versions
+* cryptographic document fingerprints
+* signed issuer submissions
+* signing-key rotation
+* issuer revocation
+* rate limiting
+* audit logging
+* account MFA support
+* secure API credentials
+Future:
+* hardware-backed issuer signing
+* third-party timestamps
+* independent transparency log
+* distributed mirror registry
+
+22. Data Minimization
+Authoro should store the minimum evidence necessary.
+The system should support:
+Proof without surveillance.
+Providers should be capable of submitting aggregate evidence instead of raw keystrokes.
+Example:
+Store:
+* 12,441 manual characters
+* 632 paste characters
+* cryptographic checkpoint chain
+Do not necessarily store:
+* every key pressed
+* every deleted private sentence
+Raw telemetry can remain with the original provider.
+Authoro stores the verifiable attestation.
+This is a major architecture principle.
+
+23. Business Model
+Individuals
+Free:
+* limited proof registrations
+* public Proof Records
+* Authoro Mark
+* basic self-attestation
+Pro:
+* unlimited works
+* richer evidence controls
+* custom author profile
+* private/unlisted proofs
+* advanced version history
+
+Publishers
+Subscription based on:
+* monthly registered works
+* API volume
+* issuer accounts
+* teams
+* branded verification interfaces
+
+Platforms
+Developer/API plans.
+Potential pricing based on:
+* proofs registered
+* API calls
+* active works
+* verification traffic
+
+Institutions
+Schools, universities, publishers, government, research organizations.
+Features:
+* managed issuers
+* institution-level signatures
+* retention policies
+* administrative controls
+* audit exports
+
+24. Network Effect
+Authoro becomes more valuable as more evidence providers support it.
+A user initially sees:
+Authoro self-attestation
+Later:
+WordPress + Writermark
+Later:
+WordPress + Writermark + Claude + Publisher
+The registry accumulates evidence without requiring one provider to dominate the creation workflow.
+That is the central strategic advantage.
+
+25. Competitive Positioning
+Authoro should not compete primarily on:
+* writing editor features
+* grammar
+* plagiarism detection
+* AI detection
+* LMS functionality
+* publishing
+Authoro owns:
+resolution + normalization + registry + public verification
+Competitors should ideally become data sources.
+This includes companies that might otherwise appear competitive.
+The question should be:
+Can their proof be represented inside Authoro?
+If yes, integration may be more valuable than competition.
+
+26. V0 Technical Architecture
+Suggested stack:
+Frontend
+Next.js
+Backend
+Next.js API routes or standalone API service
+Database
+Postgres / Supabase
+Auth
+Supabase Auth or equivalent
+Object Storage
+Evidence packages and optional artifacts
+Hashing
+SHA-256 minimum
+Signing
+Asymmetric signatures for issuer evidence
+Public Routes
+/p/[proofId]
+/a/[author]
+/issuer/[issuer]
+API
+/api/v1/...
+
+27. Core Database Objects
+users
+* id
+* email
+* display_name
+* created_at
+works
+* id
+* owner_id
+* title
+* type
+* canonical_url
+* created_at
+work_versions
+* id
+* work_id
+* version
+* content_hash
+* media_type
+* registered_at
+issuers
+* id
+* name
+* domain
+* verification_status
+* public_key
+attestations
+* id
+* work_version_id
+* issuer_id
+* evidence_type
+* payload
+* signature
+* created_at
+proof_records
+* public_id
+* work_version_id
+* visibility
+* status
+contributors
+* work_version_id
+* contributor_id
+* role
+
+28. V0 Success Metrics
+Do not optimize initially for registered users.
+Measure the loop.
+Primary:
+Proof Mark click-through rate
+Can ordinary readers understand why they would inspect a proof?
+Secondary:
+* works registered
+* percentage embedding the mark
+* public verification page views
+* repeat authors
+* proofs with multiple attestations
+* verification API calls
+Most important qualitative question:
+Does seeing an Authoro record meaningfully increase confidence or understanding about how the work was produced?
+
+29. Biggest Product Risks
+Nobody cares enough to click
+Mitigation:
+Make the Proof Mark increasingly recognizable and proof page instantly understandable.
+Evidence becomes too technical
+Mitigation:
+Public page first communicates plain English.
+Raw technical proof remains expandable.
+Providers do not integrate
+Mitigation:
+First-party recorder + WordPress plugin create initial ecosystem.
+“Human-written” becomes meaningless
+Mitigation:
+Authoro records process rather than enforcing ideological purity.
+Legal disputes
+Mitigation:
+Precisely attribute claims to issuers.
+Never present unverified submissions as Authoro-certified facts.
+Privacy backlash
+Mitigation:
+Store attestations and hashes whenever possible rather than raw composition content.
+
+30. Recommended Build Sequence
+V0 — 2-sided proof loop
+Creator registers → Authoro creates proof → creator embeds mark → reader verifies
+Build only enough to test this behavior.
+
+V1 — Registry
+Introduce:
+* Proof Envelope
+* issuer system
+* signed attestations
+* multi-provider records
+* public API
+This is when Authoro becomes meaningfully differentiated.
+
+V1.5 — First-party capture
+Build:
+* WordPress plugin
+* browser recorder
+These generate genuine high-quality proof while preserving existing writing workflows.
+
+V2 — Infrastructure
+Launch:
+* Authoro MCP
+* SDKs
+* issuer developer portal
+* open Evidence Profile
+* AI contribution reporting
+* C2PA interoperability
+
+V3 — Network
+Build:
+* publisher network
+* author profiles
+* provenance graph
+* derived-work relationships
+* institutional integrations
+* broader media support
+
+31. Product North Star
+Authoro should not attempt to become:
+The app where everyone writes.
+It should attempt to become:
+The place everyone checks.
+Its strongest future state is one in which a reader does not care whether a document came from Word, WordPress, Claude, Substack, Google Docs, Writermark, or an editor that does not yet exist.
+They simply recognize:
+◉
+and know:
+There is a record behind this work.
+That is the product.
+My strongest recommendation is to keep V0 almost absurdly small: registration, hashing, public /p/[id] pages, self/third-party evidence, and the embeddable Authoro Mark. The WordPress/browser recording layer is tempting, but the central-registry thesis is the thing worth validating first.
+
+
+————-
+Yes. In fact, open source makes Authoro more credible if the basic registry/proof standard is meant to become infrastructure. The money should come from services around trust, not from hiding the provenance format.
+I’d think of the business as:
+Free/Open Authoro = proof infrastructure Authoro Pro = identity + research + monitoring + convenience + human verification
+Your A–D ideas fit that very well, with a couple of important changes.
+Feature	My take	Monetization role
+A. Trademark/copyright research	Strong, but split the two	High-margin human-assisted Pro service
+B. Plagiarism/originality scan	Very easy to integrate	Per-document / Pro credits
+C. Claude Plugin + Authoro MCP	Potentially one of the killer features	Pro convenience + distribution
+D. Vetted Author	Strong if called Identity Verified, not “Vetted”	Annual verification subscription
+Ongoing copy monitoring	Possibly strongest recurring feature	Monthly subscription
+Publisher/Organization verification	Very strong B2B	SaaS / annual contract
+Legal/evidence export packs	Natural extension of registry	Per-export / Pro
+Private provenance vault	Easy Pro feature	Subscription
+A. Your 24-hour trademark service is very sellable
+I'd call it something like:
+Authoro Name Check or Authoro Conflict Scan
+rather than Trademark Clearance, unless an attorney is actually providing the legal conclusion.
+The USPTO itself distinguishes a basic exact-match “knock-out” search from a more comprehensive clearance search and recommends looking for similar wording, spellings, pronunciations, goods/services, etc. (USPTO)
+So Authoro could do:
+Automated first pass
+USPTO marks similar spellings phonetic variants relevant classes web search company names domains social names app stores Amazon/books perhaps
+Then:
+Human-reviewed within 24 hours
+And return:
+No obvious conflicts found Potential conflicts requiring review High-similarity results Search methodology Links to evidence
+Crucially:
+This is a research report, not a legal opinion or guarantee of trademark availability.
+Then later you could have:
+Attorney Review — $XXX
+through a partner trademark attorney.
+That creates a lovely escalation path.
+Copyright is different
+I would not sell “copyright clearance” the same way.
+Copyright exists automatically when qualifying original expression is fixed; registration isn't required for copyright to exist. (U.S. Copyright Office)
+And the Copyright Office's public records system mainly contains registration/recordation metadata; it specifically says the public record does not contain copies or reproductions of the works themselves. (U.S. Copyright Office Public Records)
+So searching the copyright database cannot tell you:
+“Nobody owns copyright in anything similar to this.”
+Instead offer two separate things:
+Copyright Record Search “Are there registrations matching this title/author/work?”
+and
+Originality Search “Does substantial text from this work appear elsewhere?”
+The latter is really your plagiarism product.
+
+B. Plagiarism is almost turnkey
+This one is a definite yes.
+Copyleaks explicitly provides a plagiarism REST API designed for embedding into other products. It can compare text against web sources, academic sources and private document repositories and can return a hosted report. (Copyleaks Docs)
+Originality.ai also has an API that combines plagiarism scanning with other checks. (Originality.ai)
+So publishing could look like:
+Ready to register AU-82KF1?
+☑ Run originality scan — 1 Pro credit
+✓ 98.7% original 3 matching sources found 2 properly quoted 1 requires review
+Add scan to Authoro Proof Record
+The subtle architectural point:
+Authoro shouldn't certify “not plagiarized.”
+Instead:
+Copyleaks scan performed September 30, 2026 Results: X
+Again you're recording evidence and its issuer.
+That's consistent with the entire Authoro philosophy.
+But there's a better subscription hiding here
+Don't just scan before publication.
+Watch my work after publication.
+Every week/month:
+Authoro found 4 new websites containing substantial portions of your registered article.
+Now you're not selling a one-time plagiarism check.
+You're selling:
+Authoro Watch
+Protect registered works after publication.
+That's potentially recurring revenue forever.
+And it fits the registry beautifully because Authoro already knows the exact canonical work and publication date.
+
+C. I think the Claude Plugin could become really good
+This has become especially timely: Anthropic opened its plugin directory submission portal on September 25, 2026, and plugins can package an MCP connector, Agent Skill, or both. (Claude)
+So yes:
+Authoro Claude Plugin
+could be one-click provenance.
+The author works normally.
+Eventually:
+“Publish this version to Authoro.”
+Claude handles the boring stuff:
+Title
+Author display name
+Work type
+Description
+Canonical URL
+Version number
+Document fingerprint
+AI involvement
+Claude involvement
+Creation timestamp evidence
+Previous Authoro version
+Source relationships
+Evidence envelope
+Claude calls Authoro MCP:
+prepare_registration()
+submit_evidence()
+create_work_version()
+And gets back:
+AU-7KF29 — awaiting author attestation
+Then everything stops.
+This is important.
+The Agent can never perform the final author attestation.
+Not Claude.
+Not ChatGPT.
+Not an automation.
+Not your MCP.
+That human interruption actually becomes one of Authoro's most important trust properties.
+The user receives:
+Final author attestation
+Jane Doe
+I attest that, to the best of my knowledge, the information submitted for this Authoro record is true, accurate, and complete. I understand that Authoro records and displays provenance claims but does not independently guarantee the truth of information submitted by me or third parties.
+Type your full legal name
+________________________
+☐ I agree and attest
+REGISTER
+I'd put broader indemnification/limitation-of-liability language in the Terms of Service rather than trying to cram:
+“Authoro shall not be held liable…”
+into the attestation itself. Have counsel eventually finalize both.
+And I'd cryptographically record the attestation as its own event:
+Attestation:
+User AU-U8372
+Authenticated account
+September 30 2026 09:42:17 PDT
+Work AU-7KF29
+Version hash 8ae21...
+Attestation schema 1.1
+Potentially signed with a passkey.
+That's meaningful evidence.
+One limitation worth preserving
+The Claude plugin can attest to what Claude/Authoro actually observed.
+It cannot say:
+“Jane manually typed this in Microsoft Word.”
+unless a Word recorder supplied that evidence.
+That's exactly why the multi-provider model is good.
+
+D. Yes to the checkmark — but Identity Verified
+I would avoid:
+✓ Vetted Author
+because “vetted” sounds like Authoro has decided this is a reputable/good/honest person.
+Use:
+✓ Identity Verified
+That claim is narrow and defensible:
+Authoro has verified that the account holder's identity matches the identity information provided.
+You could use a service such as Stripe Identity; its API supports document verification and can optionally require a matching selfie. (Stripe Docs)
+Then you potentially have three levels:
+Author Normal account.
+✓ Identity Verified Government-ID identity check completed.
+✓ Organization Verified Domain/business/institution verified.
+That second one could absolutely be paid annually.
+And I'd make the public record say:
+Identity verified June 14, 2026
+rather than implying permanent validity.
+
+This gives you a surprisingly clean Pro product
+I could see the eventual screen being:
+Authoro Free
+Register works Permanent Authoro IDs Proof Mark Public proof pages Self-attestations Open Proof Envelope Open API/SDK within reasonable limits
+Authoro Pro
+✓ Identity Verified
+Claude Plugin / MCP publishing
+Automatic document metadata
+Originality scans
+Private/unlisted proofs
+Extended evidence storage
+Full revision/version management
+Custom author page
+Domain verification
+High-resolution / publisher Proof Marks
+Evidence export packages
+And then the genuinely compelling recurring feature:
+Authoro Protect
+Continuous plagiarism/copy monitoring
+We found your registered work somewhere else.
+That is something authors have an obvious reason to keep paying for.
+
+Then there is an even better B2B business
+Imagine The Atlantic, a university, Medium, a technical publisher, or a course marketplace becoming:
+✓ Authoro Verified Issuer
+They pay you.
+They receive an organizational signing key.
+Everything they publish can produce:
+Publisher Attestation
+Example Media, Inc. ✓ Verified Authoro Issuer
+Jane Doe submitted this article through our editorial system.
+Publication confirmed: September 30, 2026.
+They could pay based on API volume.
+That eventually becomes much larger than $10/month author subscriptions.
+
+Open source actually helps the business model
+I'd probably split the project roughly like this:
+Open
+Proof Envelope specification verification libraries hash/signature implementation SDK basic registry client Proof Mark implementation reference recorder perhaps even the core registry server
+Commercial Authoro.net
+canonical global resolver managed hosting issuer verification identity verification continuous preservation high-volume APIs human research plagiarism services monitoring institution administration compliance/audit tools premium integrations
+And I would trademark Authoro and the Authoro Proof Mark even though the code is open source.
+That's important.
+Anyone can implement the protocol.
+They cannot legitimately pretend:
+✓ Authoro Verified
+unless Authoro issued that status.
+This is similar to how open infrastructure can coexist with a trusted branded network.
+If you want stronger protection against cloud companies simply hosting your server unchanged, you could explore an AGPL-style license for the server while keeping the Proof Envelope/spec and client SDKs extremely permissive. I'd want the evidence format to spread everywhere.
+
+The monetization flywheel is unusually good
+It could become:
+FREE
+Register my work.
+↓
+$
+Verify who I am.
+↓
+$
+Check originality.
+↓
+$$
+Search trademarks/name conflicts.
+↓
+$ recurring
+Watch the Internet for copies of my work.
+↓
+$
+Create a professionally packaged provenance/evidence report.
+↓
+$$
+Help prepare copyright registration information.
+↓
+$$$
+Publisher / school / institutional issuer account.
+↓
+$$$$
+API + enterprise provenance infrastructure.
+And none of those requires putting the fundamental “this hash existed at this time and these parties attested to these things” functionality behind a paywall.
+That's exactly the kind of open-source commercialization model I'd want for Authoro: the public record stays boring, open and trustworthy; people pay Authoro to make creating, strengthening, researching, monitoring and institutionalizing that record dramatically easier.
+
+
+
+————-
+Authoro
+PRD Addendum — Pro Services, Trust Layer & Revised Product Definitions
+Parent document: Authoro — Public Provenance Registry for Authorship and Creative Work Addendum purpose: Define the commercial layer, paid trust services, human-attestation workflow, identity verification, MCP/plugin experience, protection services, and revised terminology introduced after the original PRD.
+
+1. Strategic Update
+The original Authoro PRD defined Authoro primarily as:
+A neutral public registry where authorship and provenance evidence from multiple systems can be normalized, verified, and resolved through a canonical public record.
+That remains the core product.
+This Addendum introduces the commercial model:
+Authoro should remain open at the provenance layer and monetize services that make provenance easier to create, stronger to trust, safer to publish, easier to monitor, and more useful professionally.
+The goal is not to charge users for the basic right to establish a provenance record.
+The goal is to monetize:
+* identity verification
+* human-reviewed research
+* originality/plagiarism scanning
+* post-publication monitoring
+* premium automation
+* managed integrations
+* publisher verification
+* institutional trust
+* professional evidence packages
+* private evidence storage
+* high-volume API use
+
+2. Revised Product Definition
+Authoro should now be understood as four related layers.
+Layer 1 — Open Provenance Infrastructure
+The public/common layer.
+Includes:
+* Authoro Evidence Profile
+* Proof Envelope schema
+* open verification logic
+* hash/fingerprint format
+* version relationships
+* basic SDKs
+* Proof Mark specification
+* public resolver behavior
+Goal:
+Make Authoro-compatible provenance easy for others to adopt.
+
+Layer 2 — Authoro Registry
+The canonical hosted public infrastructure.
+Includes:
+* Authoro IDs
+* public Proof Records
+* permanent resolution URLs
+* registered issuers
+* signature validation
+* version history
+* canonical work records
+Example:
+authoro.net/p/AU-7K3F92
+
+Layer 3 — Authoro Pro
+Paid services for individual creators and professional authors.
+Includes:
+* identity verification
+* originality scanning
+* enhanced document protection
+* premium automation
+* private proof records
+* custom author pages
+* enhanced evidence exports
+* continuous monitoring
+
+Layer 4 — Authoro Institutional
+Paid infrastructure for organizations.
+Includes:
+* verified publisher status
+* organization signing keys
+* institution issuer accounts
+* bulk APIs
+* managed teams
+* administrative policies
+* institutional provenance issuance
+* compliance/audit exports
+
+3. Revised Core Product Promise
+Original conceptual promise:
+Authoro proves how a work was created.
+Revised promise:
+Authoro preserves and resolves verifiable evidence about who created a work, how it was created, what systems participated, and what claims have been made about it.
+Authoro should avoid claiming absolute truth.
+Authoro verifies:
+* signatures
+* hashes
+* identities where applicable
+* timestamps
+* issuer credentials
+* evidence integrity
+Authoro does not universally verify:
+* intellectual originality
+* true underlying authorship
+* absence of undeclared AI usage
+* legal ownership
+* copyright validity
+* trademark availability
+
+4. Brand Architecture
+Parent Brand
+Authoro
+Preferred interpretation:
+Author + oath/pledge/authorization associations.
+Internal brand idea:
+The creator pledges a work to the record.
+Possible public-facing positioning:
+Authoro — The record behind the work.
+
+5. Authoro Mark
+The Authoro Proof Mark becomes strategically important.
+The mark should not need to spell out the full product name.
+Preferred future direction:
+A + verification symbol
+Potential concepts:
+* stylized A with integrated checkmark
+* A inside an open circle
+* A whose crossbar becomes a check
+* A combined with a subtle provenance node
+* A◉
+* A✓
+The mark should remain usable:
+* at 12–16px
+* beside article bylines
+* in book metadata
+* in academic references
+* in PDFs
+* inside CMS footers
+* inside social cards
+* as favicon/app icon
+The fact that Authoro begins with A makes the letter itself meaningful as an authorship symbol before the user even knows the brand.
+The logo should therefore prioritize a distinctive custom A rather than a long wordmark.
+The Authoro wordmark can use a more expressive/custom font, while the compact A-mark must remain recognizable independently.
+
+6. Open Source Strategy
+Authoro should deliberately separate:
+Open Components
+Recommended open-source components:
+* Proof Envelope specification
+* Authoro Evidence Profile
+* hash/fingerprint logic
+* signature verification libraries
+* basic SDKs
+* Proof Mark implementation rules
+* reference implementations
+* client libraries
+* developer examples
+* optional basic recorder
+Goal:
+Allow third-party systems to become Authoro-compatible without requiring proprietary licensing.
+
+Commercial Components
+Authoro.net may monetize:
+* managed registry hosting
+* identity verification
+* verified issuer status
+* plagiarism scanning
+* copy monitoring
+* managed APIs
+* institution accounts
+* research services
+* private provenance vaults
+* advanced integrations
+* legal/evidence exports
+* enterprise administration
+The protocol should be open.
+The trusted commercial service should remain valuable.
+
+7. Trademark and Brand Protection
+Even if core code is open source, Authoro should seek trademark protection for:
+* Authoro name
+* Authoro logo
+* Authoro Proof Mark
+* Authoro Verified terminology where appropriate
+Important distinction:
+Others may be allowed to implement Authoro-compatible technology.
+They should not automatically be allowed to display:
+Authoro Verified
+or the official Authoro Mark unless they meet the appropriate registry requirements.
+This protects network trust without requiring the underlying standard to remain closed.
+
+8. Revised Product Versions
+V0 — Open Registry Loop
+Original objective remains.
+Primary loop:
+Register → Generate Proof Record → Embed Mark → Reader Resolves
+Features:
+* account creation
+* work registration
+* document hash
+* Authoro ID
+* public proof URL
+* author self-attestation
+* simple evidence submission
+* Proof Mark embed
+* document verification
+* basic public API
+No advanced commercial services required.
+
+9. V0.5 — Authoro Pro Foundation
+Introduce account tiers without making core provenance paid.
+Free
+Includes:
+* limited or generous basic registrations
+* permanent Authoro ID
+* public Proof Record
+* self-attestation
+* standard Proof Mark
+* document verification
+* basic author profile
+* open SDK/API access within limits
+
+Pro
+Initial paid features:
+* Identity Verified
+* private/unlisted Proof Records
+* advanced version management
+* enhanced evidence summaries
+* custom author profile
+* additional artifact storage
+* advanced export
+* publication metadata automation
+* premium MCP/plugin capabilities
+* plagiarism/originality credits
+
+10. Identity Verified
+This replaces the earlier concept of:
+Vetted Author
+Preferred terminology:
+Identity Verified
+Reason:
+“Vetted” suggests judgment about trustworthiness, reputation, honesty, or quality.
+“Identity Verified” makes a narrow factual claim.
+
+Identity Verification Workflow
+User chooses:
+Verify Identity
+Possible verification methods:
+* government ID
+* document + selfie match
+* approved identity provider
+* institutional verification
+After verification:
+✓ Identity Verified
+Public record may display:
+Identity verified by Authoro Verified September 2026
+Optional privacy setting:
+Publicly display:
+* legal name
+* verified pen name
+* verification status only
+Authoro should support authors who publish under pseudonyms.
+Example:
+Morgan Vale ✓
+Public:
+Identity privately verified by Authoro.
+Legal identity need not be disclosed publicly.
+
+11. Verification Expiration
+Identity verification should not necessarily imply lifetime validity.
+Possible statuses:
+* verified
+* verification expired
+* verification pending
+* verification revoked
+* identity changed
+Potential renewal:
+Every 1–3 years depending on provider/risk profile.
+This creates legitimate recurring revenue without artificial feature lock-in.
+
+12. Verified Organization
+Separate identity product for organizations.
+Examples:
+* publisher
+* newspaper
+* university
+* journal
+* course marketplace
+* agency
+* software platform
+Badge:
+✓ Verified Organization
+Verification may include:
+* domain control
+* legal entity
+* business registration
+* organization representative
+* signing key ownership
+
+13. Verified Issuer
+An organization that is allowed to submit signed evidence into Authoro.
+This is separate from simply having a verified business account.
+Example:
+Grammarly ✓ Verified Authoro Issuer
+Issuer record includes:
+* issuer ID
+* domain
+* supported evidence types
+* public signing keys
+* key history
+* verification date
+* revocation status
+
+14. Authoro MCP
+The MCP should become one of Authoro's highest-value convenience layers.
+However:
+MCP is an interface to the Authoro API, not the foundation of Authoro's data model.
+The REST/API layer remains canonical.
+
+15. Authoro Claude Plugin
+A Claude plugin may bundle:
+* Authoro MCP
+* Authoro Skill/instructions
+* optional UI components
+Primary purpose:
+Allow authors to work normally and register provenance without repeatedly visiting Authoro.
+
+16. Claude Workflow
+User writes naturally with Claude.
+No Authoro interaction required during normal drafting.
+When ready:
+Publish this version to Authoro.
+Claude determines available information.
+Potential automatically collected fields:
+* title
+* document type
+* author display name
+* current content
+* document hash
+* version relationship
+* project/source metadata
+* AI involvement
+* Claude involvement
+* creation/edit timeline available to Claude
+* referenced sources
+* canonical publication URL if known
+Claude submits this through Authoro MCP.
+
+17. MCP Submission State
+MCP creates:
+Pending Authoro Registration
+It does NOT finalize registration when human attestation is required.
+Example result:
+AU-DRAFT-84F2 Waiting for Author Attestation
+The user receives an Authoro confirmation page.
+
+18. Mandatory Human Attestation
+Agents may prepare registrations.
+Agents must not complete the final author declaration on behalf of the human.
+This human interruption becomes a core trust feature.
+Required workflow:
+1. Authoro displays submitted information.
+2. User reviews the submission.
+3. User corrects anything necessary.
+4. User enters legal name or verified signing identity.
+5. User accepts attestation.
+6. Registration is finalized.
+
+19. Recommended Attestation Language
+Working product copy:
+Author Attestation
+I attest that, to the best of my knowledge, the information submitted for this Authoro record is true, accurate, and complete.
+Secondary explanation:
+Authoro records provenance claims and supporting evidence but does not independently guarantee the truth, authorship, ownership, originality, or legal status of information submitted by users or third parties.
+Formal liability/indemnification language should live primarily in:
+* Terms of Service
+* Privacy Policy
+* Issuer Agreement
+* Institutional Agreement
+and should ultimately receive legal review.
+
+20. Attestation Signature
+Initial method:
+* authenticated Authoro account
+* typed full legal name
+* Agree checkbox
+* timestamp
+* work ID
+* version hash
+Future enhancement:
+Passkey or cryptographic user signature.
+Attestation should itself become a signed evidence object.
+Example:
+{
+  "type": "author-attestation",
+  "work": "AU-7K3F92",
+  "version": "sha256:...",
+  "account": "AU-U2811",
+  "signedAt": "...",
+  "statementVersion": "1.2"
+}
+
+21. Agent Attribution
+If Claude assists with a work registered through Authoro, Authoro should optionally capture a machine-readable AI contribution record.
+Examples:
+* brainstorming
+* outline generation
+* paragraph generation
+* rewriting
+* grammar correction
+* summarization
+* citation assistance
+Do not force every AI interaction into a simplistic percentage.
+Instead preserve evidence when available.
+
+22. Originality / Plagiarism Scan
+Add as Authoro Pro feature.
+Purpose:
+Identify substantial text overlap with previously published material.
+Possible architecture:
+Authoro sends document content or fingerprinted sections to third-party plagiarism/originality APIs.
+Results become an evidence object.
+Example:
+Originality scan performed Provider: Copyleaks Date: September 30, 2026 Significant matching sources: 3
+
+23. Originality Scan Language
+Avoid:
+✓ No plagiarism
+Prefer:
+Originality scan completed
+or:
+No significant matching text identified by Provider X at time of scan.
+This avoids turning probabilistic database coverage into an absolute legal claim.
+
+24. Scan Visibility
+Author chooses whether the scan result is:
+* private
+* summary public
+* fully public
+Possible public record:
+Originality Scan
+✓ Completed September 30, 2026 Provider: [Provider Name] Match coverage: 1.4% Sources flagged: 2
+
+25. Originality Credits
+Possible pricing:
+Pro includes:
+* X scans/month
+Additional scans:
+* per credit
+* document-length based
+* word-count based
+Long-form books may consume multiple credits.
+
+26. Authoro Watch
+New recurring product.
+Purpose:
+Monitor the web for newly published copies or substantial reuse of registered work.
+This may become one of Authoro's strongest recurring revenue features.
+
+27. Authoro Watch Workflow
+User registers work.
+User enables:
+Watch this work
+Authoro periodically searches supported databases/services.
+Potential findings:
+* verbatim copies
+* substantial partial copies
+* unattributed excerpts
+* reposts
+* syndication
+* suspicious mirrors
+User receives:
+New potential copy detected.
+
+28. Watch Result
+Example:
+Possible reuse detected
+Source:
+example.com/article
+Detected:
+October 8, 2026
+Similarity:
+78%
+First observed:
+October 8, 2026
+Your registered publication date:
+September 30, 2026
+Actions:
+* Ignore
+* Mark licensed
+* Mark authorized syndication
+* Save evidence
+* Export report
+
+29. Authoro Watch Evidence Preservation
+For higher-tier users, Authoro may preserve:
+* URL
+* timestamp
+* page fingerprint
+* matching passages
+* screenshot
+* archive evidence where legally/technically appropriate
+This can support later disputes.
+Authoro should still avoid presenting itself as adjudicating infringement.
+
+30. Trademark Research Service
+Add premium human-assisted service.
+Working names:
+Authoro Name Check
+or:
+Authoro Conflict Scan
+Avoid naming the basic product:
+Trademark Clearance
+unless legal counsel is formally involved.
+
+31. Name Check Scope
+Automated first-pass research may include:
+* USPTO records
+* similar marks
+* spelling variants
+* phonetic variants
+* relevant classes
+* company names
+* web search
+* domain names
+* social handles
+* app stores
+* publishing marketplaces
+
+32. Human Review
+Premium feature:
+Human-reviewed within 24 hours
+Human reviewer validates:
+* obvious missed matches
+* confusing similarity
+* relevant categories
+* major commercial conflicts
+* search quality
+Deliverable:
+Authoro Name Research Report
+
+33. Name Research Result Categories
+Possible wording:
+Low obvious conflict
+No major conflicting marks identified in this research.
+Review recommended
+Potentially relevant marks found.
+Significant conflict indicators
+One or more close matches identified.
+Never:
+Trademark available
+unless formal legal counsel gives that opinion.
+
+34. Attorney Escalation
+Future optional marketplace/referral:
+Attorney Review
+Authoro provides evidence pack.
+Partner attorney may offer:
+* legal clearance opinion
+* trademark application
+* class selection
+* filing support
+Authoro itself remains the research platform unless separately licensed/structured.
+
+35. Copyright Record Search
+Separate from trademark research.
+Potential feature:
+Search public registration records for:
+* title
+* claimant
+* author
+* registration number
+* date
+* related works
+Do not treat absence of registration as proof that copyright does not exist.
+
+36. Originality Search vs Copyright Search
+Keep these clearly differentiated.
+Copyright Record Search
+Question:
+Are relevant registration records present?
+Originality Search
+Question:
+Does materially similar published content appear elsewhere?
+Legal Ownership
+Question:
+Who legally owns the copyright?
+Authoro should not automatically answer this.
+
+37. Provenance Evidence Export
+New Pro feature.
+Generate professionally formatted evidence package.
+Possible outputs:
+* PDF
+* JSON
+* signed manifest
+* ZIP evidence bundle
+Contents:
+* Authoro ID
+* document fingerprint
+* author attestation
+* issuer attestations
+* publication timeline
+* identity status
+* originality scan
+* evidence signatures
+* version chain
+* relevant metadata
+
+38. Evidence Export Use Cases
+Useful for:
+* publisher disputes
+* school disputes
+* copyright disputes
+* editorial review
+* freelance deliverables
+* licensing transactions
+* platform moderation appeals
+* authorship contests
+Do not describe exports as legal certification unless appropriate.
+Working name:
+Authoro Evidence Pack
+
+39. Private Provenance Vault
+Paid feature.
+Some authors will want provenance evidence without immediately making it public.
+Modes:
+Public
+Anyone with Authoro ID can resolve.
+Unlisted
+Only someone with link can access.
+Private
+Visible only to owner/team.
+Embargoed
+Proof remains private until future publication date.
+
+40. Embargoed Registration
+Potentially valuable for:
+* journalists
+* researchers
+* book authors
+* patent-adjacent documentation
+* agencies
+* product launches
+Authoro can establish timestamped evidence before publication without revealing the content publicly.
+At publication:
+Make Proof Record public
+
+41. Domain Verification
+Pro creators may verify:
+* personal domain
+* company domain
+* publication domain
+Example public profile:
+Jane Smith ✓
+Verified identity
+Verified domain:
+janesmith.com
+This strengthens authorship without forcing institutional relationships.
+
+42. Custom Author Profiles
+Pro profiles may include:
+* display name
+* verified identity status
+* pen names
+* domains
+* registered works
+* publisher relationships
+* ORCID-like identifiers where applicable
+* social links
+* expertise areas
+Avoid popularity metrics.
+No:
+* follower counts
+* trust score
+* reputation score
+Authoro should remain evidence-oriented.
+
+43. Organization Profiles
+Publisher/institution profile may show:
+* organization identity
+* verified domain
+* Authoro Issuer status
+* signing keys
+* registered publications
+* evidence types emitted
+* revocation history
+* transparency details
+
+44. Institutional Issuance
+Organizations may automatically issue Authoro records.
+Example:
+University writing portal submits:
+* student work fingerprint
+* identity attestation
+* writing-session evidence
+* submission timestamp
+Publisher submits:
+* editorial acceptance
+* publication timestamp
+* publication fingerprint
+AI provider submits:
+* model contribution evidence
+Authoro combines them.
+
+45. Team Plans
+Potential Pro/Business tier.
+Capabilities:
+* shared organization
+* multiple authors
+* editors
+* publishers
+* roles
+* approval workflow
+* team evidence policies
+* centralized billing
+* bulk registration
+
+46. API Monetization
+Open API should remain usable at reasonable volume.
+Commercial API plans may charge for:
+* high request volumes
+* bulk registration
+* advanced verification
+* identity APIs
+* evidence storage
+* organization issuance
+* monitoring
+* service-level guarantees
+Do not charge merely for resolving a normal public Authoro ID.
+Public verification should remain widely accessible.
+
+47. Canonical Resolver Should Remain Free
+Important business rule:
+Visiting:
+authoro.net/p/AU-7K3F92
+must remain free.
+Public trust infrastructure loses value if readers hit a paywall.
+Similarly:
+Basic validation:
+Is this Authoro record valid?
+should remain free.
+
+48. Revised Assurance Model
+Do not use one global trust score.
+Authoro instead displays multiple evidence badges.
+Examples:
+✓ Identity Verified
+✓ Final Artifact Verified
+✓ Publisher Confirmed
+✓ Continuous Creation Evidence
+✓ Originality Scan Completed
+✓ Author Attestation
+AI Contribution Recorded
+Each describes one claim.
+
+49. Avoid the Blue-Check Trap
+Authoro's checkmark should not become shorthand for:
+This person is important.
+or:
+This author is trustworthy.
+It should mean something concrete.
+For people:
+Identity Verified
+For works:
+Proof Record Available
+For organizations:
+Organization Verified
+For integrations:
+Verified Issuer
+This prevents Authoro from turning into a status hierarchy.
+
+50. Revised Product Tiers
+Authoro Free
+For everyone.
+Includes:
+* Authoro ID
+* public Proof Record
+* Proof Mark
+* document fingerprints
+* self-attestation
+* basic versioning
+* basic API
+* basic profile
+* free verification lookup
+
+Authoro Pro
+For serious creators.
+Potential features:
+* Identity Verified
+* pen-name identity protection
+* advanced version management
+* private/unlisted works
+* evidence storage
+* Claude Plugin premium workflow
+* Authoro MCP automation
+* plagiarism/originality credits
+* Authoro Watch allowance
+* custom author profile
+* domain verification
+* Evidence Packs
+
+Authoro Protect
+Possible standalone/upper tier.
+Focused on post-publication protection.
+Includes:
+* continuous plagiarism monitoring
+* copy detection
+* evidence preservation
+* infringement timeline
+* exportable reports
+* optional attorney referral
+
+Authoro Publisher
+For publishers and platforms.
+Includes:
+* Verified Organization
+* Verified Issuer
+* signing keys
+* publisher attestations
+* API volume
+* team accounts
+* bulk registration
+* branded integration
+* domain-level administration
+
+Authoro Institution
+For:
+* schools
+* universities
+* journals
+* government
+* research organizations
+Includes:
+* institutional signing
+* identity federation
+* retention policies
+* evidence exports
+* role management
+* audit tools
+* administrative controls
+
+51. Potential Pricing Philosophy
+Pricing should align with cost and value.
+Free:
+Low marginal-cost infrastructure.
+Subscription:
+Convenience and monitoring.
+Usage-based:
+Third-party scans and high-volume API use.
+Premium one-time:
+Human research.
+Enterprise:
+Institutional trust and workflow.
+Example categories, not final prices:
+* Pro monthly/annual
+* Identity verification fee
+* originality scan credits
+* Authoro Watch subscription
+* 24-hour human Name Check
+* Evidence Pack export
+* publisher API contract
+
+52. Human Review Marketplace
+Long-term possibility.
+Authoro could support vetted external specialists.
+Services:
+* trademark research
+* publishing review
+* citation verification
+* authorship evidence review
+* document provenance audit
+However:
+Initial human services should probably be operated directly or through carefully selected partners to maintain consistency.
+
+53. Third-Party Service Attribution
+Whenever Authoro relies on outside services, expose the provider.
+Example:
+Identity verification provided by [Provider]
+Originality analysis provided by [Provider]
+Timestamp authority: [Provider]
+This keeps the registry intellectually honest.
+
+54. Revocation
+Authoro needs explicit support for evidence being revoked.
+Examples:
+* compromised issuer key
+* fraudulent identity
+* erroneous submission
+* publisher retracts attestation
+* author retracts self-attestation
+Do not silently delete historical records.
+Instead:
+Attestation revoked
+with:
+* revocation timestamp
+* revoking party
+* reason category
+* optional public explanation
+
+55. Corrections
+If metadata is wrong:
+Do not overwrite the original record silently.
+Create correction event.
+Example:
+Author name corrected October 2, 2026.
+Previous metadata remains available to the integrity system.
+
+56. Disputes
+Future dispute workflow:
+Challenge this claim
+Possible challenges:
+* incorrect author
+* stolen work
+* false publisher assertion
+* false AI disclosure
+* identity misuse
+* fraudulent evidence provider
+Authoro records dispute status without automatically adjudicating authorship.
+Example:
+Claim disputed
+rather than:
+Claim false
+until appropriate resolution.
+
+57. Updated Data Model
+Additional tables/entities.
+identity_verifications
+* id
+* user_id
+* provider
+* provider_reference
+* verified_at
+* expires_at
+* status
+organizations
+* id
+* name
+* domain
+* verification_status
+issuer_keys
+* id
+* issuer_id
+* public_key
+* active_from
+* revoked_at
+author_attestations
+* id
+* work_version_id
+* user_id
+* legal_name_hash
+* statement_version
+* signed_at
+originality_scans
+* id
+* work_version_id
+* provider
+* provider_reference
+* result_summary
+* created_at
+monitoring_jobs
+* id
+* work_id
+* status
+* frequency
+monitoring_matches
+* id
+* work_id
+* source_url
+* detected_at
+* similarity
+* evidence_location
+research_orders
+* id
+* user_id
+* service_type
+* work_or_name
+* status
+* due_at
+evidence_exports
+* id
+* work_version_id
+* export_type
+* generated_at
+
+58. Updated Security Requirements
+Add:
+* encrypted identity-provider references
+* minimal storage of government-ID data
+* no raw ID storage unless absolutely required
+* protected attestation records
+* passkey support
+* issuer key rotation
+* compromised-key revocation
+* encrypted private evidence
+* strong separation of public/private proof data
+
+59. Data Minimization Update
+Authoro should avoid becoming an unnecessary warehouse of sensitive material.
+Prefer storing:
+* document hashes
+* issuer attestations
+* aggregate telemetry
+* signed evidence
+* external references
+over:
+* full raw keystroke logs
+* government ID scans
+* private deleted text
+* complete third-party documents
+When raw evidence must exist, retention controls should be explicit.
+
+60. Revised Roadmap
+V0
+Public registry loop.
+Build:
+* registration
+* fingerprinting
+* Proof Record
+* Authoro ID
+* Proof Mark
+* self-attestation
+
+V0.5
+Commercial foundation.
+Build:
+* Pro accounts
+* private proofs
+* better versions
+* Evidence Packs
+* domain verification
+
+V1
+Trust infrastructure.
+Build:
+* signed Proof Envelopes
+* issuer accounts
+* Verified Issuers
+* multi-provider evidence
+* verification API
+
+V1.25
+Identity layer.
+Build:
+* Identity Verified
+* pseudonym support
+* organization verification
+* human attestation system
+
+V1.5
+First-party recording.
+Build:
+* WordPress integration
+* browser recorder
+* enhanced publication workflows
+
+V1.75
+Originality and protection.
+Build:
+* plagiarism/originality API
+* scan records
+* Authoro Watch
+* match evidence storage
+
+V2
+Agent-native Authoro.
+Build:
+* Authoro MCP
+* Claude Plugin
+* agent-prepared registrations
+* human final attestation
+* AI contribution attestations
+
+V2.25
+Human services.
+Build:
+* Name Check
+* trademark conflict research
+* Copyright Record Search
+* manual 24-hour review
+* attorney referral pathway
+
+V2.5
+Developer ecosystem.
+Build:
+* open Authoro Evidence Profile
+* richer SDKs
+* developer portal
+* C2PA mapping
+* W3C credential interoperability
+
+V3
+Institutional network.
+Build:
+* publisher plans
+* university plans
+* organization issuance
+* publisher signing
+* provenance graphs
+* derived-work relationships
+* large-scale API infrastructure
+
+61. Revised North Star
+The original North Star remains valid:
+Authoro should not become the place everyone writes. It should become the place everyone checks.
+This Addendum adds a commercial corollary:
+The record should remain open. Strengthening, automating, protecting, researching, and professionally managing that record is where Authoro gets paid.
+That distinction is strategically important.
+The free product creates the network.
+The paid products increase the quality of evidence within that network.
+
+62. Long-Term Product Identity
+Authoro should resist becoming:
+* another AI detector
+* another plagiarism checker
+* another writing application
+* another blue-check social network
+* another copyright filing service
+Those can all become capabilities.
+The larger identity should remain:
+Authoro is provenance infrastructure for creative work.
+Its simplest recognizable consumer interaction becomes:
+A✓
+or another distinctive Authoro A-mark.
+A reader sees it.
+They click.
+They see:
+* who claims authorship
+* which identities were verified
+* who observed creation
+* which AI systems participated
+* where and when the work was published
+* whether the artifact still matches
+* whether outside services analyzed it
+* whether any claims have been corrected, disputed, or revoked
+The logo therefore carries two meanings naturally:
+A = Author / Authorship / Authoro
+and
+✓ = evidence exists behind this claim
+That is exactly the kind of compact symbol that could eventually work without requiring the full Authoro wordmark beside it.
