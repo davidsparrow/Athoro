@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { authorProfiles } from "@/db/schema";
+import { authorProfiles, proofRecords, works, workVersions } from "@/db/schema";
 import type { CreateProfileInput, ProfileFields } from "./profile-validation";
 
 export type AuthorProfile = typeof authorProfiles.$inferSelect;
@@ -68,4 +68,54 @@ export async function updateAuthorProfile(
     .returning();
   if (!profile) throw new ProfileError("form", "Create your author profile first.");
   return profile;
+}
+
+/**
+ * A public author page: the profile and the latest public version of each of
+ * its works. Returns null when the author has hidden their page.
+ */
+export async function getAuthorPage(db: Database, handle: string) {
+  const profile = await getProfileByHandle(db, handle);
+  if (!profile?.isPublic) return null;
+
+  const rows = await db
+    .select({
+      workId: works.publicId,
+      workType: works.workType,
+      workCreatedAt: works.createdAt,
+      title: workVersions.title,
+      versionNumber: workVersions.versionNumber,
+      proofId: proofRecords.publicId,
+      status: proofRecords.status,
+      registeredAt: proofRecords.registeredAt,
+    })
+    .from(works)
+    .innerJoin(workVersions, eq(workVersions.workId, works.id))
+    .innerJoin(proofRecords, eq(proofRecords.workVersionId, workVersions.id))
+    .where(
+      and(
+        eq(works.authorProfileId, profile.id),
+        ne(proofRecords.status, "pending_attestation"),
+        eq(proofRecords.visibility, "public"),
+      ),
+    )
+    .orderBy(desc(works.createdAt), desc(workVersions.versionNumber));
+
+  const latestByWork = new Map<string, (typeof rows)[number] & { versionCount: number }>();
+  for (const row of rows) {
+    const latest = latestByWork.get(row.workId);
+    if (latest) latest.versionCount++;
+    else latestByWork.set(row.workId, { ...row, versionCount: 1 });
+  }
+
+  return {
+    profile: {
+      handle: profile.handle,
+      displayName: profile.displayName,
+      bio: profile.bio,
+      websiteUrl: profile.websiteUrl,
+      memberSince: profile.createdAt,
+    },
+    works: [...latestByWork.values()],
+  };
 }

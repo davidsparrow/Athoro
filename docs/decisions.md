@@ -83,3 +83,13 @@ Vercel deploys from GitHub with the root directory `apps/web`. `pnpm vercel-buil
 ## 017: Attestations name the author profile, not the account
 
 Author attestation payloads (`authoro-author-attestation/1.0`) carry `author`, the opaque ID of the author profile (byline or pen name) that attested, rather than the account ID. The payload is published so anyone can recompute its hash. Publishing account IDs would let readers link an account's pen names once multiple pen names exist. The account link stays private in `author_attestations.user_id`.
+
+## 018: Versions and withdrawal
+
+- **New versions.** A new version of a work gets its own proof ID and record. A work has at most one pending version at a time, and a version byte-identical to an earlier one is refused. The work type is fixed by the work, while title, URL and description are per version, and the work's current metadata follows its newest registered version. Registering version N appends a `newer-version-registered` event to the previous record, which stays valid.
+- **Withdrawal** is owner-only, allowed only for registered records, and final. The record stays public with its reason (a fixed category plus an optional note) and a `withdrawn` event. Nothing is deleted.
+
+## 019: Identity verification stays in V1.25
+
+**Decided:** 2026-09-30, with the product owner.
+"Identity Verified" via Stripe Identity remains in its planned phase (V1.25, a paid Pro feature), not pulled into V0. Stripe Identity is billed per verification with no monthly fee (the first 50 are free), charged monthly from the Stripe balance. Groundwork already in place: attestations store a salted hash of the typed legal name, which can later be matched against the name Stripe verifies without publishing it.

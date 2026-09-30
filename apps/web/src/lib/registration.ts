@@ -8,8 +8,9 @@ import {
   normalizeTypedName,
   TEXT_CANONICALIZATION,
   toHex,
+  type WorkType,
 } from "@authoro/core";
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, ne, or, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import {
   attestations,
@@ -24,7 +25,8 @@ import type { ValidRegistration } from "./registration-validation";
 
 export const CREATION_DISCLOSURE_SCHEMA = "authoro-creation-disclosure/1.0";
 
-export type RegistrationErrorCode = "not-found" | "not-pending" | "invalid-name";
+export type RegistrationErrorCode =
+  "not-found" | "not-pending" | "invalid-name" | "draft-exists" | "unchanged" | "not-registered";
 
 export class RegistrationError extends Error {
   constructor(
@@ -49,6 +51,85 @@ function randomSalt(): string {
   return toHex(bytes);
 }
 
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/** Inserts a pending version with its proof record and author-supplied evidence. */
+async function insertPendingVersion(
+  tx: Transaction,
+  {
+    workId,
+    versionNumber,
+    userId,
+    profile,
+    registration,
+  }: {
+    workId: string;
+    versionNumber: number;
+    userId: string;
+    profile: AuthorProfile;
+    registration: ValidRegistration;
+  },
+): Promise<string> {
+  const { work, document, disclosure, envelope } = registration;
+  const disclosurePayload = { schema: CREATION_DISCLOSURE_SCHEMA, ...disclosure };
+  const [version] = await tx
+    .insert(workVersions)
+    .values({
+      workId,
+      versionNumber,
+      title: work.title,
+      description: work.description,
+      canonicalUrl: work.canonicalUrl,
+      authorDisplayName: profile.displayName,
+      contentHash: document.contentHash,
+      textHash: document.textHash,
+      textCanonicalization: document.textHash ? TEXT_CANONICALIZATION : null,
+      mediaType: document.mediaType,
+      byteLength: document.byteLength,
+      wordCount: document.wordCount,
+    })
+    .returning();
+  const [record] = await tx
+    .insert(proofRecords)
+    .values({ publicId: generateProofId(), workVersionId: version!.id })
+    .returning();
+
+  await tx.insert(attestations).values({
+    workVersionId: version!.id,
+    evidenceClass: "self",
+    claimType: "creation-disclosure",
+    submittedByUserId: userId,
+    payload: disclosurePayload,
+    payloadHash: await hashCanonicalJson(disclosurePayload),
+  });
+  if (envelope) {
+    await tx.insert(attestations).values({
+      workVersionId: version!.id,
+      evidenceClass: envelope.evidence.class ?? "self",
+      claimType: "proof-envelope",
+      submittedByUserId: userId,
+      payload: envelope,
+      payloadHash: await hashCanonicalJson(envelope),
+      signature: envelope.signature ?? null,
+      // Issuer keys arrive in V1; until then a signature can't be checked.
+      signatureStatus: envelope.signature ? "unverifiable" : "unsigned",
+    });
+  }
+  return record!.publicId;
+}
+
+/** Retries a transaction when a freshly generated public ID collides. */
+async function withFreshIds<T>(run: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      if (isPublicIdCollision(error) && attempt < 5) continue;
+      throw error;
+    }
+  }
+}
+
 /**
  * Creates the work, version 1, a proof record awaiting the author's
  * attestation, and the author-supplied evidence. Nothing is public until
@@ -62,76 +143,99 @@ export async function prepareRegistration(
     registration,
   }: { userId: string; profile: AuthorProfile; registration: ValidRegistration },
 ): Promise<{ proofId: string; workId: string }> {
-  const { work, document, disclosure, envelope } = registration;
-  const disclosurePayload = { schema: CREATION_DISCLOSURE_SCHEMA, ...disclosure };
-  const disclosureHash = await hashCanonicalJson(disclosurePayload);
-  const envelopeHash = envelope ? await hashCanonicalJson(envelope) : null;
-
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await db.transaction(async (tx) => {
-        const [createdWork] = await tx
-          .insert(works)
-          .values({
-            publicId: generateWorkId(),
-            ownerId: userId,
-            authorProfileId: profile.id,
-            title: work.title,
-            workType: work.workType,
-            canonicalUrl: work.canonicalUrl,
-            description: work.description,
-          })
-          .returning();
-        const [version] = await tx
-          .insert(workVersions)
-          .values({
-            workId: createdWork!.id,
-            versionNumber: 1,
-            title: work.title,
-            description: work.description,
-            canonicalUrl: work.canonicalUrl,
-            authorDisplayName: profile.displayName,
-            contentHash: document.contentHash,
-            textHash: document.textHash,
-            textCanonicalization: document.textHash ? TEXT_CANONICALIZATION : null,
-            mediaType: document.mediaType,
-            byteLength: document.byteLength,
-            wordCount: document.wordCount,
-          })
-          .returning();
-        const [record] = await tx
-          .insert(proofRecords)
-          .values({ publicId: generateProofId(), workVersionId: version!.id })
-          .returning();
-
-        await tx.insert(attestations).values({
-          workVersionId: version!.id,
-          evidenceClass: "self",
-          claimType: "creation-disclosure",
-          submittedByUserId: userId,
-          payload: disclosurePayload,
-          payloadHash: disclosureHash,
-        });
-        if (envelope && envelopeHash) {
-          await tx.insert(attestations).values({
-            workVersionId: version!.id,
-            evidenceClass: envelope.evidence.class ?? "self",
-            claimType: "proof-envelope",
-            submittedByUserId: userId,
-            payload: envelope,
-            payloadHash: envelopeHash,
-            signature: envelope.signature ?? null,
-            // Issuer keys arrive in V1; until then a signature can't be checked.
-            signatureStatus: envelope.signature ? "unverifiable" : "unsigned",
-          });
-        }
-        return { proofId: record!.publicId, workId: createdWork!.publicId };
+  const { work } = registration;
+  return withFreshIds(() =>
+    db.transaction(async (tx) => {
+      const [createdWork] = await tx
+        .insert(works)
+        .values({
+          publicId: generateWorkId(),
+          ownerId: userId,
+          authorProfileId: profile.id,
+          title: work.title,
+          workType: work.workType,
+          canonicalUrl: work.canonicalUrl,
+          description: work.description,
+        })
+        .returning();
+      const proofId = await insertPendingVersion(tx, {
+        workId: createdWork!.id,
+        versionNumber: 1,
+        userId,
+        profile,
+        registration,
       });
-    } catch (error) {
-      if (isPublicIdCollision(error) && attempt < 5) continue;
-      throw error;
-    }
-  }
+      return { proofId, workId: createdWork!.publicId };
+    }),
+  );
+}
+
+/**
+ * Prepares the next version of an existing work. A work has at most one
+ * pending version at a time, and a version identical to an earlier one is
+ * refused. The work type is fixed by the work.
+ */
+export async function prepareVersion(
+  db: Database,
+  {
+    userId,
+    profile,
+    workPublicId,
+    registration,
+  }: { userId: string; profile: AuthorProfile; workPublicId: string; registration: ValidRegistration },
+): Promise<{ proofId: string; workId: string; versionNumber: number }> {
+  return withFreshIds(() =>
+    db.transaction(async (tx) => {
+      const [work] = await tx
+        .select()
+        .from(works)
+        .where(and(eq(works.publicId, workPublicId), eq(works.ownerId, userId)))
+        .for("update")
+        .limit(1);
+      if (!work) throw new RegistrationError("not-found", "Work not found.");
+
+      const existing = await tx
+        .select({
+          versionNumber: workVersions.versionNumber,
+          contentHash: workVersions.contentHash,
+          proofId: proofRecords.publicId,
+          status: proofRecords.status,
+        })
+        .from(workVersions)
+        .innerJoin(proofRecords, eq(proofRecords.workVersionId, workVersions.id))
+        .where(eq(workVersions.workId, work.id))
+        .orderBy(desc(workVersions.versionNumber));
+
+      const draft = existing.find((version) => version.status === "pending_attestation");
+      if (draft) {
+        throw new RegistrationError(
+          "draft-exists",
+          `Version ${draft.versionNumber} (${draft.proofId}) is waiting for attestation. Finish or discard it first.`,
+        );
+      }
+      const identical = existing.find((version) => version.contentHash === registration.document.contentHash);
+      if (identical) {
+        throw new RegistrationError(
+          "unchanged",
+          `This document is identical to version ${identical.versionNumber} (${identical.proofId}).`,
+        );
+      }
+
+      const versionNumber = (existing[0]?.versionNumber ?? 0) + 1;
+      const proofId = await insertPendingVersion(tx, {
+        workId: work.id,
+        versionNumber,
+        userId,
+        profile,
+        // The type belongs to the work, not the version.
+        registration: {
+          ...registration,
+          work: { ...registration.work, workType: work.workType as WorkType },
+        },
+      });
+      return { proofId, workId: work.publicId, versionNumber };
+    }),
+  );
 }
 
 /** A registration owned by `userId`, with everything the attestation page shows. */
@@ -231,6 +335,42 @@ export async function finalizeRegistration(
       data: { attestationHash, statementVersion: attestation.statementVersion },
       createdAt: now,
     });
+
+    // The work's current metadata follows its newest registered version.
+    await tx
+      .update(works)
+      .set({
+        title: row.version.title,
+        canonicalUrl: row.version.canonicalUrl,
+        description: row.version.description,
+      })
+      .where(eq(works.id, row.version.workId));
+
+    // Earlier records stay valid; their history notes that a newer version exists.
+    if (row.version.versionNumber > 1) {
+      const [previous] = await tx
+        .select({ id: proofRecords.id })
+        .from(workVersions)
+        .innerJoin(proofRecords, eq(proofRecords.workVersionId, workVersions.id))
+        .where(
+          and(
+            eq(workVersions.workId, row.version.workId),
+            lt(workVersions.versionNumber, row.version.versionNumber),
+            ne(proofRecords.status, "pending_attestation"),
+          ),
+        )
+        .orderBy(desc(workVersions.versionNumber))
+        .limit(1);
+      if (previous) {
+        await tx.insert(recordEvents).values({
+          proofRecordId: previous.id,
+          eventType: "newer-version-registered",
+          actorUserId: userId,
+          data: { proofId, versionNumber: row.version.versionNumber },
+          createdAt: now,
+        });
+      }
+    }
     return { proofId, attestationHash };
   });
 }
@@ -317,4 +457,67 @@ export async function findRegisteredByFingerprint(
     )
     .orderBy(proofRecords.registeredAt)
     .limit(5);
+}
+
+export const WITHDRAWAL_REASONS = {
+  "incorrect-metadata": "The record's details are wrong",
+  "erroneous-submission": "Registered by mistake",
+  "author-request": "The author no longer wants this record",
+  other: "Other",
+} as const;
+
+export type WithdrawalReason = keyof typeof WITHDRAWAL_REASONS;
+
+/**
+ * Withdraws a registered record. Withdrawal is final and public: the record
+ * stays resolvable with a banner, its history gains a `withdrawn` event, and
+ * nothing is deleted.
+ */
+export async function withdrawRecord(
+  db: Database,
+  {
+    proofId,
+    userId,
+    reason,
+    note,
+    now = new Date(),
+  }: { proofId: string; userId: string; reason: WithdrawalReason; note?: string | null; now?: Date },
+): Promise<void> {
+  const cleanNote = note?.trim().slice(0, 500) || null;
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ record: proofRecords })
+      .from(proofRecords)
+      .innerJoin(workVersions, eq(workVersions.id, proofRecords.workVersionId))
+      .innerJoin(works, eq(works.id, workVersions.workId))
+      .where(and(eq(proofRecords.publicId, proofId), eq(works.ownerId, userId)))
+      .for("update", { of: proofRecords })
+      .limit(1);
+    if (!row) throw new RegistrationError("not-found", "Record not found.");
+    if (row.record.status !== "registered") {
+      throw new RegistrationError(
+        "not-registered",
+        row.record.status === "withdrawn"
+          ? "This record is already withdrawn."
+          : "Only registered records can be withdrawn.",
+      );
+    }
+    await tx
+      .update(proofRecords)
+      .set({
+        status: "withdrawn",
+        withdrawnAt: now,
+        withdrawnReason: cleanNote
+          ? `${WITHDRAWAL_REASONS[reason]}: ${cleanNote}`
+          : WITHDRAWAL_REASONS[reason],
+      })
+      .where(eq(proofRecords.id, row.record.id));
+    await tx.insert(recordEvents).values({
+      proofRecordId: row.record.id,
+      eventType: "withdrawn",
+      actorUserId: userId,
+      data: { reason, note: cleanNote },
+      createdAt: now,
+    });
+  });
 }
