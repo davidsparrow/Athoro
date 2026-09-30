@@ -2,10 +2,11 @@
 
 import type { Route } from "next";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { CheckEmail } from "@/components/check-email";
 import { Alert, Button, Field, inputClass } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";
+import { authErrorMessage } from "@/lib/auth-messages";
 
 type Method = "password" | "link";
 
@@ -25,6 +26,39 @@ export function SignInForm({
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [linkSentTo, setLinkSentTo] = useState<string | null>(null);
+
+  // Full navigation so every server-rendered part of the page picks up the new session.
+  const finish = () => window.location.assign(next);
+  const askForCode = () =>
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full load: signing in again may have just cleared the session cookie
+    window.location.assign(`/sign-in/two-factor?next=${encodeURIComponent(next)}`);
+
+  // Offer saved passkeys in the email field's autofill where the browser supports it.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const available = await window.PublicKeyCredential?.isConditionalMediationAvailable?.();
+      if (!available || cancelled) return;
+      const { data } = await authClient.signIn.passkey({ autoFill: true });
+      if (data && !cancelled) finish();
+    })().catch(() => {
+      // Autofill is a convenience; the passkey button and the form still work.
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- start the autofill request once
+  }, []);
+
+  async function signInWithPasskey() {
+    setError(null);
+    setNotice(null);
+    setPending(true);
+    const { data, error } = await authClient.signIn.passkey();
+    setPending(false);
+    if (data) return finish();
+    setError(authErrorMessage(error, "Couldn't sign you in with a passkey. Please try again."));
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,12 +81,13 @@ export function SignInForm({
       return;
     }
 
-    const { error } = await authClient.signIn.email({
+    const { data, error } = await authClient.signIn.email({
       email,
       password: String(form.get("password")),
       callbackURL: next,
     });
     setPending(false);
+    if (data && "twoFactorRedirect" in data && data.twoFactorRedirect) return askForCode();
     if (error) {
       if (error.code === "EMAIL_NOT_VERIFIED") {
         setNotice("Confirm your email address first. We've sent you a new confirmation link.");
@@ -61,8 +96,7 @@ export function SignInForm({
       }
       return;
     }
-    // Full navigation so every server-rendered part of the page picks up the new session.
-    window.location.assign(next);
+    finish();
   }
 
   if (linkSentTo) {
@@ -98,7 +132,14 @@ export function SignInForm({
         {error ? <Alert tone="error">{error}</Alert> : null}
         {notice ? <Alert tone="info">{notice}</Alert> : null}
         <Field label="Email" htmlFor="email">
-          <input id="email" name="email" type="email" autoComplete="email" required className={inputClass} />
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email webauthn"
+            required
+            className={inputClass}
+          />
         </Field>
         {method === "password" ? (
           <Field
@@ -128,6 +169,15 @@ export function SignInForm({
           {pending ? "Please wait…" : method === "password" ? "Sign in" : "Send sign-in link"}
         </Button>
       </form>
+
+      <div className="flex items-center gap-3 text-xs text-ink-muted" aria-hidden>
+        <span className="h-px flex-1 bg-line" />
+        or
+        <span className="h-px flex-1 bg-line" />
+      </div>
+      <Button variant="secondary" className="w-full" disabled={pending} onClick={signInWithPasskey}>
+        Sign in with a passkey
+      </Button>
     </div>
   );
 }

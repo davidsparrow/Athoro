@@ -102,3 +102,15 @@ Author attestation payloads (`authoro-author-attestation/1.0`) carry `author`, t
 - **A new version starts from the latest one.** `/register?work=AUW-…` opens the wizard prefilled from the latest attested version, with the type locked. A document identical to an earlier version is caught in the browser, and a pending draft blocks the page with a link to it. `POST /api/v1/works/{id}/versions` carries over the `work` fields a request leaves out. A different `workType` is a `400`. Conflicts are `409 draft_exists` or `409 unchanged`, and they name the conflicting record's `proofId`.
 - **Older records point forward.** A record with newer versions shows a banner naming the newest registered version, or the newest one noted as withdrawn if every later version was withdrawn. The record's history describes `newer-version-registered` and `withdrawn` events in plain English. The API lists each event type's public details explicitly, so private event data can't leak.
 - **Author pages.** `/a/<handle>` lists the latest public version of each work with its version count and status. Hidden and unknown handles both return 404, so a hidden page doesn't confirm that a handle exists. Other spellings redirect to the lowercase handle. The page notes that the author wrote their own profile and that Authoro doesn't verify identity.
+
+## 021: Sign-in security
+
+**Decided:** 2026-09-30, with the product owner (optional factors, magic links then a code, passkey-signed attestations in V1).
+
+- **Optional, with a nudge.** Passkeys and two-step verification (TOTP) are optional, as in the PRD's "account MFA support". The dashboard asks accounts with neither to add one.
+- **Passkeys** come from `@better-auth/passkey`, pinned to the Better Auth version. The relying party ID is the app URL's hostname. A passkey sign-in skips the code, since a passkey already combines possession with the device's own check.
+- **Every sign-in route asks for the code.** Better Auth's two-factor plugin only challenges password sign-ins, so `magicLinkTwoFactor` (in `lib/auth-security.ts`) holds back the session a magic link creates and starts the same challenge. Accounts created by magic link can turn on TOTP without a password (`allowPasswordless`).
+- **Recovery** is ten backup codes (Crockford base32, `7K3F9-2MXQ4`, forgiving of case and look-alikes) or a passkey. Email can't bypass the second factor. There is no "trust this device" option.
+- **Recent sign-in for changes.** Turning TOTP on or off, new backup codes, revealing the TOTP secret, and adding or removing a passkey all need a sign-in from the last hour. The check runs in a Better Auth hook, so direct API calls can't skip it. Settings sends people to sign in again (`/sign-in?reauth=1`).
+- **Accountability.** Passkeys added or removed, TOTP turned on or off, backup codes regenerated or used to sign in: each is an audit event and an email to the account holder. A session held back for its code isn't logged as created.
+- **Passkey-signed attestations** (PRD §20) wait for V1, where they fit with signed Proof Envelopes and issuer keys.

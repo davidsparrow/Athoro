@@ -13,9 +13,11 @@ V0 proves one loop: **creator registers → Authoro creates a proof → creator 
 
 **V0 is complete.**
 
-## Next (priorities to confirm)
+## After V0
 
-Security hardening (passkeys and TOTP MFA, a PRD requirement) · V0.5 Pro · V1 signed Proof Envelopes · V1.25 Identity Verified · V2 Authoro MCP and Claude plugin.
+- [x] **Chunk 7: Sign-in security.** Passkeys: add, rename and remove them in Settings, and sign in with one (from the email field's autofill or a button) without a code. Two-step verification with an authenticator app: a QR code to set up, ten readable backup codes, and a code step after a password _or_ an email link. Changing sign-in security needs a sign-in from the last hour, checked by the auth layer itself. Every change is audited and emailed to the account holder. Both are optional, and the dashboard nudges accounts that have neither.
+
+Next, in the order to be confirmed: V0.5 Pro · V1 signed Proof Envelopes, including attestations signed with a passkey · V1.25 Identity Verified · V2 Authoro MCP and Claude plugin.
 
 ## Later (from the PRD)
 

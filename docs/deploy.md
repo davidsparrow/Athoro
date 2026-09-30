@@ -37,3 +37,4 @@ Migrations are additive and generated from `apps/web/src/db/schema.ts` (`pnpm db
 - **Region:** put the Vercel functions in the same region as the database (_Settings → Functions_).
 - **Rate limits** for sign-in, sign-up and email links are stored in Postgres (`rate_limit` table), so they hold across serverless instances.
 - **Logs:** audit events live in the `audit_events` table (IPs stored only as keyed hashes). Emails that weren't sent appear in the function logs.
+- **Passkeys are tied to the domain** in `NEXT_PUBLIC_APP_URL` (its hostname is the WebAuthn relying party ID). Set the production domain before people add passkeys: passkeys made on another domain won't work after a move. On previews, a passkey works only on the URL it was added on (the branch URL), not the deployment's hashed URL.
