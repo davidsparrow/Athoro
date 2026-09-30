@@ -114,3 +114,13 @@ Author attestation payloads (`authoro-author-attestation/1.0`) carry `author`, t
 - **Recent sign-in for changes.** Turning TOTP on or off, new backup codes, revealing the TOTP secret, and adding or removing a passkey all need a sign-in from the last hour. The check runs in a Better Auth hook, so direct API calls can't skip it. Settings sends people to sign in again (`/sign-in?reauth=1`).
 - **Accountability.** Passkeys added or removed, TOTP turned on or off, backup codes regenerated or used to sign in: each is an audit event and an email to the account holder. A session held back for its code isn't logged as created.
 - **Passkey-signed attestations** (PRD §20) wait for V1, where they fit with signed Proof Envelopes and issuer keys.
+
+## 022: Documentation links and multi-source provenance (planned for chunk 8)
+
+**Decided:** 2026-09-30, with the product owner.
+
+- **Anyone who submits evidence may link to their own documentation**: the author in their creation disclosure, a platform or school in its Proof Envelope. The link is attributed to whoever supplied it and never presented as Authoro's finding.
+- **Link plus an optional hash.** The URL (https only) is stored inside the hashed or signed evidence, so it can't be swapped later. A submitter may add the SHA-256 of an exported report so readers can check a downloaded copy. Authoro doesn't fetch, store or monitor the linked documentation (proof without surveillance).
+- **Append-only evidence.** Evidence and links can be added to a registered version later, each with its own date and source. The author's original attestation is unchanged. Evidence added by a platform appears only after the author approves it (humans finalize).
+- **Multi-source revisions.** Each version keeps its own evidence from any mix of sources, and the record shows a provenance history across versions.
+- **Placement.** Chunk 8, before V0.5 Pro. Direct submission by platforms and schools with verified signing keys stays in V1 (issuer accounts): they prepare, the author attests.
