@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { Card } from "@/components/ui";
 import { auth } from "@/lib/auth";
+import { db } from "@/db";
+import { listApiKeys } from "@/lib/api/keys";
 import { requireAuthor } from "@/lib/session";
 import { ChangePasswordForm, SetPasswordForm, SignOutOtherSessions } from "./account-forms";
+import { ApiKeysPanel } from "./api-keys-panel";
 import { ProfileSettingsForm } from "./profile-settings-form";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -12,6 +15,7 @@ export default async function SettingsPage() {
   const { session, profile } = await requireAuthor("/settings");
   const accounts = await auth.api.listUserAccounts({ headers: await headers() });
   const hasPassword = accounts.some((account) => account.providerId === "credential");
+  const apiKeys = await listApiKeys(db, session.user.id);
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8 px-4 py-12">
@@ -32,6 +36,28 @@ export default async function SettingsPage() {
             }}
           />
         </div>
+      </Card>
+
+      <Card>
+        <h2 className="font-medium">API keys</h2>
+        <p className="mt-1 mb-5 text-sm text-ink-muted">
+          Let your tools prepare registrations through the{" "}
+          <a
+            href="https://github.com/davidsparrow/Authoro/blob/main/docs/api.md"
+            className="underline underline-offset-4"
+          >
+            Authoro API
+          </a>
+          . Anything a key submits waits for you to attest before it becomes public.
+        </p>
+        <ApiKeysPanel
+          keys={apiKeys.map((key) => ({
+            ...key,
+            createdAt: key.createdAt.toISOString(),
+            lastUsedAt: key.lastUsedAt?.toISOString() ?? null,
+            revokedAt: key.revokedAt?.toISOString() ?? null,
+          }))}
+        />
       </Card>
 
       <Card>

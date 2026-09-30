@@ -73,4 +73,4 @@ Evidence classes: `continuous-observed` (A), `platform-history` (B), `publisher`
 
 ## Author attestation (`authoro-author-attestation/1.0`)
 
-The final human step of a registration. Its canonical-JSON ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)) hash lets anyone confirm the stored attestation is unaltered. It binds the proof ID, the version's hashes, the account, a hash of the creator's disclosure, a salted hash of the typed name, and the hash of the exact statement text the creator agreed to.
+The final human step of a registration. Its canonical-JSON ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)) hash lets anyone confirm the stored attestation is unaltered. It binds the proof ID, the version's hashes, the attesting author profile (an opaque ID, never the account, so pen names stay unlinkable), a hash of the creator's disclosure, a salted hash of the typed name, and the hash of the exact statement text the creator agreed to.

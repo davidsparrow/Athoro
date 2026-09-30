@@ -33,7 +33,7 @@ export const workDetailsSchema = z.object({
 
 /** Fingerprints computed in the author's browser; the document itself is never uploaded. */
 export const documentFingerprintSchema = z.object({
-  source: z.enum(["file", "text"]),
+  source: z.enum(["file", "text", "api"]),
   contentHash: hashStringSchema,
   textHash: hashStringSchema.nullable(),
   mediaType: z

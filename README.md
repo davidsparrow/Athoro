@@ -37,6 +37,8 @@ docker compose exec postgres createdb -U authoro authoro_test
 
 Deploying: see [`docs/deploy.md`](./docs/deploy.md) (Vercel + Neon Postgres + Resend).
 
+API: see [`docs/api.md`](./docs/api.md). Looking up and verifying records needs no key.
+
 ## Scripts
 
 | Command                        | Does                                                           |

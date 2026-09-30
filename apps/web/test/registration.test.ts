@@ -141,12 +141,13 @@ describe.skipIf(!db)("registration lifecycle", () => {
     expect(payload).toMatchObject({
       proofId,
       contentHash: registration!.version.contentHash,
-      account: userId,
+      author: registration!.work.authorProfileId,
       disclosureHash: registration!.evidence[0]!.payloadHash,
       signedAt: now.toISOString(),
     });
     expect(payload.legalNameHash).toBe(await hashLegalName("jane smith", stored!.legalNameSalt));
     expect(JSON.stringify(payload)).not.toContain("Jane Smith");
+    expect(JSON.stringify(payload)).not.toContain(userId);
 
     const events = await d
       .select()
