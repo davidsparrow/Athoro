@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: authoro
+          POSTGRES_PASSWORD: authoro
+          POSTGRES_DB: authoro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U authoro"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://authoro:authoro@localhost:5432/authoro
+      TEST_DATABASE_URL: postgresql://authoro:authoro@localhost:5432/authoro_test
+      BETTER_AUTH_SECRET: ci-only-secret-not-used-in-production-000000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - name: Migrations apply cleanly to an empty database
+        run: pnpm db:migrate
+      - name: Create the test database
+        run: psql "$DATABASE_URL" -c 'CREATE DATABASE authoro_test'
+      - run: pnpm test
+      - name: Schema and migrations are in sync
+        run: |
+          pnpm --filter @authoro/web exec drizzle-kit check
+          pnpm db:generate
+          if [ -n "$(git status --porcelain -- apps/web/drizzle)" ]; then
+            echo "::error::Schema changed without a migration. Run pnpm db:generate and commit the result."
+            git status --porcelain -- apps/web/drizzle
+            exit 1
+          fi
+      - run: pnpm build
