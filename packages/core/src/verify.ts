@@ -17,9 +17,7 @@ export interface CandidateFingerprints {
   textHash?: string | null;
 }
 
-export type MatchResult =
-  | { matched: true; method: MatchMethod }
-  | { matched: false; method: null };
+export type MatchResult = { matched: true; method: MatchMethod } | { matched: false; method: null };
 
 /**
  * An exact byte match is the strongest result and is checked first. A

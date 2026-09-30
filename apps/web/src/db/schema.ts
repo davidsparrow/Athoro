@@ -59,7 +59,12 @@ export const issuerKind = pgEnum("issuer_kind", [
   "institution",
   "identity_provider",
 ]);
-export const issuerVerification = pgEnum("issuer_verification", ["unverified", "verified", "suspended", "revoked"]);
+export const issuerVerification = pgEnum("issuer_verification", [
+  "unverified",
+  "verified",
+  "suspended",
+  "revoked",
+]);
 
 /** Public author identity. A user may later hold several (pen names); V0 creates one. */
 export const authorProfiles = pgTable(

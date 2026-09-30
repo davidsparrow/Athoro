@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { AuthoroMark } from "@/components/authoro-mark";
+import { buttonClass } from "@/components/ui";
 
 const STEPS = [
   {
@@ -41,21 +43,24 @@ export default function Home() {
   return (
     <>
       <section className="mx-auto max-w-5xl px-4 pt-20 pb-16 sm:px-6 sm:pt-28">
-        <p className="text-sm font-medium tracking-wide text-accent uppercase">
-          Public provenance registry
-        </p>
+        <p className="text-sm font-medium tracking-wide text-accent uppercase">Public provenance registry</p>
         <h1 className="mt-4 max-w-3xl font-serif text-5xl leading-[1.05] tracking-tight sm:text-7xl">
           The record behind the work.
         </h1>
         <p className="mt-6 max-w-2xl text-lg leading-relaxed text-ink-muted">
-          Authoro is a public registry for creative work. Authors, and the tools they write with,
-          record verifiable evidence of how a work was made. Readers click the mark and see it.
+          Authoro is a public registry for creative work. Authors, and the tools they write with, record
+          verifiable evidence of how a work was made. Readers click the mark and see it.
         </p>
-        <div className="mt-10 inline-flex items-center gap-3 rounded-full border border-line bg-paper-raised py-2 pr-5 pl-3 text-sm shadow-sm">
-          <AuthoroMark size={22} />
-          <span className="text-ink-muted">
-            authoro.net/p/<span className="font-mono text-ink">AU-7K3F92</span>
-          </span>
+        <div className="mt-10 flex flex-wrap items-center gap-4">
+          <Link href="/sign-up" className={buttonClass("primary", "h-11 px-5")}>
+            Register your work
+          </Link>
+          <div className="inline-flex items-center gap-3 rounded-full border border-line bg-paper-raised py-2 pr-5 pl-3 text-sm shadow-sm">
+            <AuthoroMark size={22} />
+            <span className="text-ink-muted">
+              authoro.net/p/<span className="font-mono text-ink">AU-7K3F92</span>
+            </span>
+          </div>
         </div>
       </section>
 
@@ -79,10 +84,10 @@ export default function Home() {
           <div>
             <h2 className="font-serif text-3xl tracking-tight">Evidence, not verdicts.</h2>
             <p className="mt-4 leading-relaxed text-ink-muted">
-              Authoro doesn&apos;t guess whether a work is &ldquo;human&rdquo; or &ldquo;AI&rdquo;,
-              and it never gives a work a score. A record lists concrete claims and names who made
-              each one: the author, an editor, a publisher or an AI tool. Claims the author supplies
-              are always labelled as author-supplied.
+              Authoro doesn&apos;t guess whether a work is &ldquo;human&rdquo; or &ldquo;AI&rdquo;, and it
+              never gives a work a score. A record lists concrete claims and names who made each one: the
+              author, an editor, a publisher or an AI tool. Claims the author supplies are always labelled as
+              author-supplied.
             </p>
             <div className="mt-8 grid gap-6 sm:grid-cols-2">
               <div>
@@ -123,13 +128,13 @@ export default function Home() {
           </div>
           <div className="space-y-4 leading-relaxed text-ink-muted md:col-span-2">
             <p>
-              The Proof Envelope format, the fingerprinting rules and the verification logic are
-              open source under Apache-2.0. Any editor, publisher or AI tool can produce
-              Authoro-compatible evidence without proprietary software.
+              The Proof Envelope format, the fingerprinting rules and the verification logic are open source
+              under Apache-2.0. Any editor, publisher or AI tool can produce Authoro-compatible evidence
+              without proprietary software.
             </p>
             <p>
-              Looking up a record, and checking a document against it, is always free. Authoro makes
-              money from services that strengthen a record, never from access to one.
+              Looking up a record, and checking a document against it, is always free. Authoro makes money
+              from services that strengthen a record, never from access to one.
             </p>
           </div>
         </div>
@@ -158,9 +163,7 @@ function ExampleRecord() {
       </div>
 
       <div className="mt-6 border-t border-line pt-5">
-        <p className="text-xs font-medium tracking-wide text-ink-muted uppercase">
-          Author disclosure
-        </p>
+        <p className="text-xs font-medium tracking-wide text-ink-muted uppercase">Author disclosure</p>
         <p className="mt-2 text-sm leading-relaxed">
           AI-assisted. AI was used for copyediting and shortening selected passages.
         </p>

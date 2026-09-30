@@ -16,12 +16,8 @@ const encode = (text: string) => new TextEncoder().encode(text);
 
 describe("sha256Hex", () => {
   it("matches known test vectors", async () => {
-    expect(await sha256Hex("")).toBe(
-      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    );
-    expect(await sha256Hex("abc")).toBe(
-      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-    );
+    expect(await sha256Hex("")).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    expect(await sha256Hex("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     expect(await sha256Hex(encode("abc"))).toBe(await sha256Hex("abc"));
   });
 });
@@ -48,9 +44,7 @@ describe("canonicalizeText (authoro-text/1)", () => {
   });
 
   it("folds typography that editors change automatically", () => {
-    expect(canonicalizeText("\u201CIt\u2019s fine,\u201D she said\u2026")).toBe(
-      "\"It's fine,\" she said...",
-    );
+    expect(canonicalizeText("\u201CIt\u2019s fine,\u201D she said\u2026")).toBe('"It\'s fine," she said...');
     expect(canonicalizeText("a -- b --- c \u2013 d \u2014 e")).toBe("a - b - c - d - e");
     expect(canonicalizeText("non\u00A0breaking")).toBe("non breaking");
     expect(canonicalizeText("\uFB01nd")).toBe("find");
@@ -71,13 +65,13 @@ describe("htmlToText", () => {
     const html = `<!doctype html><html><head><title>Hidden title</title><style>p{}</style></head>
       <body><!-- note --><h1>The Future</h1><p>Of <b>inde</b>pendent&nbsp;software &amp; more.</p>
       <script>alert("x > y")</script><p data-x="a>b">Second</p></body></html>`;
-    expect(canonicalizeText(htmlToText(html))).toBe(
-      "The Future Of independent software & more. Second",
-    );
+    expect(canonicalizeText(htmlToText(html))).toBe("The Future Of independent software & more. Second");
   });
 
   it("drops XML declarations from XHTML", () => {
-    expect(canonicalizeText(htmlToText('<?xml version="1.0"?><html><body><p>Hi</p></body></html>'))).toBe("Hi");
+    expect(canonicalizeText(htmlToText('<?xml version="1.0"?><html><body><p>Hi</p></body></html>'))).toBe(
+      "Hi",
+    );
   });
 
   it("keeps escaped markup as text", () => {
@@ -109,7 +103,10 @@ describe("fingerprintDocument", () => {
   });
 
   it("skips the text hash when a text file is not valid UTF-8", async () => {
-    const fp = await fingerprintDocument({ bytes: new Uint8Array([0xff, 0xfe, 0x00]), mediaType: "text/plain" });
+    const fp = await fingerprintDocument({
+      bytes: new Uint8Array([0xff, 0xfe, 0x00]),
+      mediaType: "text/plain",
+    });
     expect(fp.textHash).toBeUndefined();
   });
 

@@ -9,7 +9,7 @@ describe("canonicalJson", () => {
   });
 
   it("orders keys by UTF-16 code units", () => {
-    expect(canonicalJson({ "é": 1, z: 2, A: 3 })).toBe('{"A":3,"z":2,"é":1}');
+    expect(canonicalJson({ é: 1, z: 2, A: 3 })).toBe('{"A":3,"z":2,"é":1}');
   });
 
   it("serializes numbers like ECMAScript", () => {

@@ -15,6 +15,13 @@
       "when": 1790791287536,
       "tag": "0001_immutability",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790791989280,
+      "tag": "0002_auth_rate_limit",
+      "breakpoints": true
     }
   ]
 }

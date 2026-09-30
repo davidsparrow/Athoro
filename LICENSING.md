@@ -2,10 +2,10 @@
 
 Authoro separates the open protocol from the hosted registry:
 
-| Component | License | Why |
-| --- | --- | --- |
+| Component                                               | License                               | Why                                                                                                                                        |
+| ------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `packages/*` (spec, fingerprinting, verification, SDKs) | [Apache-2.0](./packages/core/LICENSE) | The evidence format should spread everywhere. Anyone can produce or verify Authoro-compatible evidence, including in proprietary software. |
-| `apps/*` (registry server) | [AGPL-3.0-only](./LICENSE) | Anyone can run, study and improve the registry, but hosted modifications must be shared. |
+| `apps/*` (registry server)                              | [AGPL-3.0-only](./LICENSE)            | Anyone can run, study and improve the registry, but hosted modifications must be shared.                                                   |
 
 Unless a package states otherwise, files under `packages/` are Apache-2.0 and all other files are AGPL-3.0-only.
 

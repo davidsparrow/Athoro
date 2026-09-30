@@ -21,7 +21,9 @@ describe("creationDisclosureSchema", () => {
   it("rejects contradictory or empty disclosures", () => {
     expect(creationDisclosureSchema.safeParse({ methods: [] }).success).toBe(false);
     expect(creationDisclosureSchema.safeParse({ methods: ["manual", "ai-assisted"] }).success).toBe(false);
-    expect(creationDisclosureSchema.safeParse({ methods: ["manual"], aiTools: ["Claude"] }).success).toBe(false);
+    expect(creationDisclosureSchema.safeParse({ methods: ["manual"], aiTools: ["Claude"] }).success).toBe(
+      false,
+    );
     expect(creationDisclosureSchema.safeParse({ methods: ["imported", "imported"] }).success).toBe(false);
   });
 });

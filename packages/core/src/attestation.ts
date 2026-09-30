@@ -59,9 +59,7 @@ export interface AuthorAttestation {
   signedAt: string;
 }
 
-export async function hashAttestationStatement(
-  version: AttestationStatementVersion,
-): Promise<string> {
+export async function hashAttestationStatement(version: AttestationStatementVersion): Promise<string> {
   const { statement, notice } = AUTHOR_ATTESTATION_STATEMENTS[version];
   return formatHash(await sha256Hex(`${statement}\n\n${notice}`));
 }

@@ -9,7 +9,9 @@ async function main() {
   if (!url) throw new Error("DATABASE_URL is not set");
   const client = postgres(url, { max: 1, onnotice: () => {} });
   try {
-    await migrate(drizzle({ client }), { migrationsFolder: new URL("../../drizzle", import.meta.url).pathname });
+    await migrate(drizzle({ client }), {
+      migrationsFolder: new URL("../../drizzle", import.meta.url).pathname,
+    });
     console.log("Migrations applied.");
   } finally {
     await client.end();

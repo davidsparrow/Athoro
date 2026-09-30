@@ -10,10 +10,10 @@ Building **V0, the public registry loop**: register → fingerprint → attest �
 
 ## Repository layout
 
-| Path | What | License |
-| --- | --- | --- |
+| Path                               | What                                                                                                                                                            | License    |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
 | [`packages/core`](./packages/core) | `@authoro/core`: Authoro IDs, document fingerprints (`authoro-text/1`), Proof Envelope schema, attestation primitives, verification. Runs in browsers and Node. | Apache-2.0 |
-| [`apps/web`](./apps/web) | The registry: a Next.js app with a Postgres database (Drizzle ORM) and Better Auth. | AGPL-3.0 |
+| [`apps/web`](./apps/web)           | The registry: a Next.js app with a Postgres database (Drizzle ORM) and Better Auth.                                                                             | AGPL-3.0   |
 
 ## Getting started
 
@@ -27,6 +27,8 @@ pnpm db:migrate                          # apply migrations
 pnpm dev                                 # http://localhost:3000
 ```
 
+Without `RESEND_API_KEY`, development prints every email to the server console, including verification, sign-in and password-reset links, so you can sign up locally with any address.
+
 The integration tests need a separate database, set by `TEST_DATABASE_URL` in `apps/web/.env`, and they wipe it on every run:
 
 ```bash
@@ -35,14 +37,14 @@ docker compose exec postgres createdb -U authoro authoro_test
 
 ## Scripts
 
-| Command | Does |
-| --- | --- |
-| `pnpm dev` | Run the web app in development |
-| `pnpm test` | Unit tests (core) and database integration tests (web) |
-| `pnpm typecheck` / `pnpm lint` | Static checks across the workspace |
-| `pnpm build` | Production build |
-| `pnpm db:generate` | Generate a migration after editing `apps/web/src/db/schema.ts` |
-| `pnpm db:migrate` | Apply migrations to `DATABASE_URL` |
+| Command                        | Does                                                           |
+| ------------------------------ | -------------------------------------------------------------- |
+| `pnpm dev`                     | Run the web app in development                                 |
+| `pnpm test`                    | Unit tests (core) and database integration tests (web)         |
+| `pnpm typecheck` / `pnpm lint` | Static checks across the workspace                             |
+| `pnpm build`                   | Production build                                               |
+| `pnpm db:generate`             | Generate a migration after editing `apps/web/src/db/schema.ts` |
+| `pnpm db:migrate`              | Apply migrations to `DATABASE_URL`                             |
 
 ## Licensing
 

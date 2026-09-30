@@ -51,7 +51,8 @@ export const evidenceClassSchema = z.enum(
 export const EVIDENCE_STATES = {
   "author-attested": {
     label: "Author Attested",
-    description: "The creator attested that the information in this record is true to the best of their knowledge.",
+    description:
+      "The creator attested that the information in this record is true to the best of their knowledge.",
   },
   "creation-process-observed": {
     label: "Creation Process Observed",

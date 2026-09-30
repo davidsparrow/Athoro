@@ -112,22 +112,34 @@ describe.skipIf(!db)("database integrity rules", () => {
     const { version, record } = await seedPendingRecord();
     await register(record.id);
     await expectRejected(
-      d.update(workVersions).set({ contentHash: hash("c") }).where(eq(workVersions.id, version.id)),
+      d
+        .update(workVersions)
+        .set({ contentHash: hash("c") })
+        .where(eq(workVersions.id, version.id)),
       /registered and immutable/,
     );
-    await expectRejected(d.delete(workVersions).where(eq(workVersions.id, version.id)), /registered and immutable/);
+    await expectRejected(
+      d.delete(workVersions).where(eq(workVersions.id, version.id)),
+      /registered and immutable/,
+    );
   });
 
   it("only moves proof records forward", async () => {
     const { record } = await seedPendingRecord();
     await expectRejected(
-      d.update(proofRecords).set({ status: "withdrawn", withdrawnAt: new Date(), registeredAt: new Date() }).where(eq(proofRecords.id, record.id)),
+      d
+        .update(proofRecords)
+        .set({ status: "withdrawn", withdrawnAt: new Date(), registeredAt: new Date() })
+        .where(eq(proofRecords.id, record.id)),
       /never registered/,
     );
     await register(record.id);
     await expectRejected(d.delete(proofRecords).where(eq(proofRecords.id, record.id)), /cannot be deleted/);
     await expectRejected(
-      d.update(proofRecords).set({ status: "pending_attestation", registeredAt: null }).where(eq(proofRecords.id, record.id)),
+      d
+        .update(proofRecords)
+        .set({ status: "pending_attestation", registeredAt: null })
+        .where(eq(proofRecords.id, record.id)),
       /cannot return to pending/,
     );
     await expectRejected(
@@ -135,7 +147,10 @@ describe.skipIf(!db)("database integrity rules", () => {
       /identity/,
     );
     await expectRejected(
-      d.update(proofRecords).set({ registeredAt: new Date(0) }).where(eq(proofRecords.id, record.id)),
+      d
+        .update(proofRecords)
+        .set({ registeredAt: new Date(0) })
+        .where(eq(proofRecords.id, record.id)),
       /registration time/,
     );
     // Visibility may change; withdrawal is final.
@@ -154,15 +169,26 @@ describe.skipIf(!db)("database integrity rules", () => {
     const { record, attestation, userId } = await seedPendingRecord();
     await register(record.id);
     await expectRejected(
-      d.update(attestations).set({ payload: { methods: ["manual"] } }).where(eq(attestations.id, attestation.id)),
+      d
+        .update(attestations)
+        .set({ payload: { methods: ["manual"] } })
+        .where(eq(attestations.id, attestation.id)),
       /is immutable/,
     );
-    await expectRejected(d.delete(attestations).where(eq(attestations.id, attestation.id)), /revoke it instead/);
+    await expectRejected(
+      d.delete(attestations).where(eq(attestations.id, attestation.id)),
+      /revoke it instead/,
+    );
     await d.update(attestations).set({ status: "disputed" }).where(eq(attestations.id, attestation.id));
     await d.update(attestations).set({ status: "active" }).where(eq(attestations.id, attestation.id));
     await d
       .update(attestations)
-      .set({ status: "revoked", revokedAt: new Date(), revokedByUserId: userId, revocationReason: "erroneous-submission" })
+      .set({
+        status: "revoked",
+        revokedAt: new Date(),
+        revokedByUserId: userId,
+        revocationReason: "erroneous-submission",
+      })
       .where(eq(attestations.id, attestation.id));
     await expectRejected(
       d.update(attestations).set({ status: "active" }).where(eq(attestations.id, attestation.id)),
@@ -221,13 +247,22 @@ describe.skipIf(!db)("database integrity rules", () => {
       .insert(recordEvents)
       .values({ proofRecordId: record.id, eventType: "registered", actorUserId: userId })
       .returning();
-    const [audit] = await d.insert(auditEvents).values({ actorType: "user", actorId: userId, action: "proof.register" }).returning();
+    const [audit] = await d
+      .insert(auditEvents)
+      .values({ actorType: "user", actorId: userId, action: "proof.register" })
+      .returning();
 
     await expectRejected(
-      d.update(authorAttestations).set({ statementVersion: "9.9" }).where(eq(authorAttestations.id, authorAttestation!.id)),
+      d
+        .update(authorAttestations)
+        .set({ statementVersion: "9.9" })
+        .where(eq(authorAttestations.id, authorAttestation!.id)),
       /append-only/,
     );
     await expectRejected(d.delete(recordEvents).where(eq(recordEvents.id, event!.id)), /append-only/);
-    await expectRejected(d.update(auditEvents).set({ action: "x" }).where(eq(auditEvents.id, audit!.id)), /append-only/);
+    await expectRejected(
+      d.update(auditEvents).set({ action: "x" }).where(eq(auditEvents.id, audit!.id)),
+      /append-only/,
+    );
   });
 });

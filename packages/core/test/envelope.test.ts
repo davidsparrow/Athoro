@@ -26,12 +26,21 @@ describe("parseProofEnvelope", () => {
   });
 
   it("requires only schema, issuer, work hash and evidence method", () => {
-    const minimal = { schema: "authoro-proof/1.0", issuer: valid.issuer, work: { hash }, evidence: { method: "x" } };
+    const minimal = {
+      schema: "authoro-proof/1.0",
+      issuer: valid.issuer,
+      work: { hash },
+      evidence: { method: "x" },
+    };
     expect(parseProofEnvelope(minimal).ok).toBe(true);
   });
 
   it("reports readable errors", () => {
-    const result = parseProofEnvelope({ ...valid, work: { hash: "md5:abc" }, evidence: { class: "vibes", method: "x" } });
+    const result = parseProofEnvelope({
+      ...valid,
+      work: { hash: "md5:abc" },
+      evidence: { class: "vibes", method: "x" },
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.some((e) => e.startsWith("work.hash"))).toBe(true);

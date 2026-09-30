@@ -69,7 +69,11 @@ export function parseProofId(input: string): string | null {
 
 /** Parses user input into a canonical work ID (`AUW-XXXXXXXX`), or returns null. */
 export function parseWorkId(input: string): string | null {
-  const match = input.trim().replace(/\s+/g, "").toUpperCase().match(/^AUW-?([0-9A-Z]+)$/);
+  const match = input
+    .trim()
+    .replace(/\s+/g, "")
+    .toUpperCase()
+    .match(/^AUW-?([0-9A-Z]+)$/);
   if (!match?.[1]) return null;
   const body = normalizeBody(match[1]);
   return body ? `${WORK_ID_PREFIX}-${body}` : null;

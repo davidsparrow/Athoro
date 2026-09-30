@@ -54,9 +54,7 @@ export type ProofEnvelope = z.infer<typeof proofEnvelopeSchema>;
 /** Maximum serialized size Authoro accepts for a single envelope. */
 export const MAX_ENVELOPE_BYTES = 64 * 1024;
 
-export type EnvelopeParseResult =
-  | { ok: true; envelope: ProofEnvelope }
-  | { ok: false; errors: string[] };
+export type EnvelopeParseResult = { ok: true; envelope: ProofEnvelope } | { ok: false; errors: string[] };
 
 /** Parses and validates a Proof Envelope from JSON text or an already-parsed value. */
 export function parseProofEnvelope(input: string | unknown): EnvelopeParseResult {

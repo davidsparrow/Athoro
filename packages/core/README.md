@@ -14,10 +14,10 @@ compareFingerprints(registered, pasted); // { matched: true, method: "canonical-
 
 ## Identifiers
 
-| Kind | Format | Example |
-| --- | --- | --- |
-| Proof (one registered version) | `AU-` + 6 Crockford base32 characters | `AU-7K3F92` |
-| Work | `AUW-` + 8 Crockford base32 characters | `AUW-4F8Q2M9C` |
+| Kind                           | Format                                 | Example        |
+| ------------------------------ | -------------------------------------- | -------------- |
+| Proof (one registered version) | `AU-` + 6 Crockford base32 characters  | `AU-7K3F92`    |
+| Work                           | `AUW-` + 8 Crockford base32 characters | `AUW-4F8Q2M9C` |
 
 The alphabet is `0123456789ABCDEFGHJKMNPQRSTVWXYZ` (no I, L, O or U). `parseProofId` accepts lowercase, a missing hyphen, a pasted `…/p/<id>` URL, and corrects O → 0 and I/L → 1. Bodies may grow to 12 characters as the registry does.
 
@@ -30,11 +30,11 @@ Hashes are written `sha256:<64 lowercase hex characters>`. A version has:
 
 ### Getting the text
 
-| Media type | Text |
-| --- | --- |
-| `text/html`, `application/xhtml+xml` | Visible text: remove comments, doctype and XML declarations, `<head>`, `<script>`, `<style>`, `<template>` and `<noscript>`. Replace block-level tags (`p`, `div`, `li`, `h1`–`h6`, `br`, table cells and so on) with a space and remove other tags. Decode character references per WHATWG. |
-| Other `text/*`, `application/json`, `application/xml` | The decoded file, as-is (Markdown is not rendered). |
-| Everything else (PDF, DOCX, images, …) | None. Only `contentHash` is computed. |
+| Media type                                            | Text                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text/html`, `application/xhtml+xml`                  | Visible text: remove comments, doctype and XML declarations, `<head>`, `<script>`, `<style>`, `<template>` and `<noscript>`. Replace block-level tags (`p`, `div`, `li`, `h1`–`h6`, `br`, table cells and so on) with a space and remove other tags. Decode character references per WHATWG. |
+| Other `text/*`, `application/json`, `application/xml` | The decoded file, as-is (Markdown is not rendered).                                                                                                                                                                                                                                          |
+| Everything else (PDF, DOCX, images, …)                | None. Only `contentHash` is computed.                                                                                                                                                                                                                                                        |
 
 Files must be valid UTF-8 (a BOM is allowed) to receive a `textHash`.
 
