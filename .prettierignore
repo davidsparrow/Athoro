@@ -1,0 +1,9 @@
+pnpm-lock.yaml
+Authoro-prd
+LICENSE
+**/LICENSE
+**/drizzle/
+apps/web/src/db/auth-schema.ts
+apps/web/next-env.d.ts
+**/.next/
+**/node_modules/

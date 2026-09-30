@@ -1,0 +1,16 @@
+# Local development database. `docker compose up -d` then `pnpm db:migrate`.
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: authoro
+      POSTGRES_PASSWORD: authoro
+      POSTGRES_DB: authoro
+    ports:
+      - "5432:5432"
+    volumes:
+      - authoro-pg:/var/lib/postgresql/data
+
+volumes:
+  authoro-pg:

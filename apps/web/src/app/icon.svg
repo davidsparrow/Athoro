@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <style>
+    .ink { stroke: #16181d; } .check { stroke: #0f6e56; }
+    @media (prefers-color-scheme: dark) { .ink { stroke: #eceae4; } .check { stroke: #4cc9a0; } }
+  </style>
+  <circle class="ink" cx="16" cy="16" r="14.5" stroke-width="2.4"/>
+  <path class="ink" d="M9.5 24 16 7l6.5 17" stroke-width="3"/>
+  <path class="check" d="m11.6 18.2 3 2.8 6-6.4" stroke-width="3"/>
+</svg>
