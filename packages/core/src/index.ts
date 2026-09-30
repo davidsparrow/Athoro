@@ -5,3 +5,4 @@ export * from "./canonical-json";
 export * from "./evidence";
 export * from "./envelope";
 export * from "./attestation";
+export * from "./work-types";

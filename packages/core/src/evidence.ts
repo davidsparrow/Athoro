@@ -133,7 +133,10 @@ const AI_METHODS: readonly CreationMethod[] = ["ai-assisted", "ai-generated-sect
 /** The creator's self-attestation about how the work was made. Displayed as "Author supplied". */
 export const creationDisclosureSchema = z
   .object({
-    methods: z.array(creationMethodSchema).min(1).max(Object.keys(CREATION_METHODS).length),
+    methods: z
+      .array(creationMethodSchema)
+      .min(1, "Select at least one way the work was made.")
+      .max(Object.keys(CREATION_METHODS).length),
     aiUses: z.array(aiUseSchema).max(Object.keys(AI_USES).length).default([]),
     aiTools: z.array(z.string().trim().min(1).max(80)).max(10).default([]),
     note: z.string().trim().max(2000).optional(),

@@ -53,3 +53,11 @@ Each account has one author profile in V0: a display name (legal or pen name), a
 ## 012: Audit log hashes IPs
 
 Security-relevant events (account created, session created, password reset or set, profile created or updated) go to the append-only `audit_events` table. Client IPs are stored only as an HMAC keyed by the server secret: events can be correlated, but addresses aren't retained.
+
+## 013: Registration flow
+
+- **Prepare, then attest.** Submitting the wizard creates the work, version 1, the author-supplied evidence and a `pending_attestation` proof record. Only `/attest/[id]`, completed by the authenticated owner, registers it. The API and agent-prepared registrations (MCP) will reuse the same pending state and page.
+- **Only fingerprints are sent.** Documents are hashed in the browser, capped at 100 MB because Web Crypto hashes whole files in memory. Streaming hashing can raise the cap later.
+- **Author-attached envelopes.** A Proof Envelope attached by the author must describe the same document (its `work.hash` matches the exact or text fingerprint). It is stored as its own attestation with `signature_status` `unsigned` or `unverifiable` (issuer keys arrive in V1) and shown as "Reported by X · submitted by the author · unverified".
+- **Duplicates are flagged, not blocked.** If the fingerprint matches a public registered record, the wizard says so and pauses. Authoro records who registered what and when; it doesn't adjudicate authorship.
+- **Drafts can be discarded** until attested. Registered records can only be withdrawn, and that is a forward-only status (chunk 6).
