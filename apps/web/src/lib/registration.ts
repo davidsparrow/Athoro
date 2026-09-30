@@ -175,7 +175,7 @@ export async function finalizeRegistration(
 
   return db.transaction(async (tx) => {
     const [row] = await tx
-      .select({ record: proofRecords, version: workVersions })
+      .select({ record: proofRecords, version: workVersions, authorProfileId: works.authorProfileId })
       .from(proofRecords)
       .innerJoin(workVersions, eq(workVersions.id, proofRecords.workVersionId))
       .innerJoin(works, eq(works.id, workVersions.workId))
@@ -203,7 +203,7 @@ export async function finalizeRegistration(
       proofId,
       contentHash: row.version.contentHash,
       textHash: row.version.textHash,
-      account: userId,
+      author: row.authorProfileId,
       disclosureHash: disclosure?.payloadHash ?? null,
       legalNameHash: await hashLegalName(name, salt),
       signedAt: now,
@@ -286,13 +286,15 @@ export async function listWorksForUser(db: Database, userId: string) {
   return rows;
 }
 
-/** Publicly registered records whose fingerprints match, for duplicate warnings. */
+/** Publicly registered records whose fingerprints match, for duplicate warnings and lookups. */
 export async function findRegisteredByFingerprint(
   db: Database,
-  { contentHash, textHash }: { contentHash: string; textHash: string | null },
+  { contentHash, textHash }: { contentHash?: string | null; textHash?: string | null },
 ) {
-  const hashConditions = [eq(workVersions.contentHash, contentHash)];
+  const hashConditions = [];
+  if (contentHash) hashConditions.push(eq(workVersions.contentHash, contentHash));
   if (textHash) hashConditions.push(eq(workVersions.textHash, textHash));
+  if (!hashConditions.length) return [];
   return db
     .select({
       proofId: proofRecords.publicId,

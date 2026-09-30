@@ -331,6 +331,13 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
               ]),
             ]}
           />
+          <p className="mt-4 text-xs text-ink-muted">
+            Machine-readable:{" "}
+            <a href={`/api/v1/proofs/${proofId}`} className="underline underline-offset-4 hover:text-ink">
+              view this record as JSON
+            </a>{" "}
+            (Authoro API v1).
+          </p>
         </div>
       </details>
 

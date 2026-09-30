@@ -311,6 +311,35 @@ export const proofMetricsDaily = pgTable(
   (table) => [primaryKey({ columns: [table.proofRecordId, table.day] })],
 );
 
+/**
+ * API keys for the v1 API. Only a SHA-256 hash of each key is stored; keys are
+ * high-entropy random strings, so a slow hash adds nothing.
+ */
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text().notNull(),
+    /** First characters of the key, shown so owners can tell keys apart. */
+    prefix: text().notNull(),
+    keyHash: text().notNull().unique(),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    lastUsedAt: timestamp({ withTimezone: true }),
+    revokedAt: timestamp({ withTimezone: true }),
+  },
+  (table) => [index().on(table.userId)],
+);
+
+/** Fixed-window request counters for the public API, keyed by API key or hashed IP. */
+export const apiRateLimits = pgTable("api_rate_limits", {
+  key: text().primaryKey(),
+  windowStart: bigint({ mode: "number" }).notNull(),
+  count: integer().notNull(),
+});
+
 export const authorProfilesRelations = relations(authorProfiles, ({ one, many }) => ({
   user: one(user, { fields: [authorProfiles.userId], references: [user.id] }),
   works: many(works),

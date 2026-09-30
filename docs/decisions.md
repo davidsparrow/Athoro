@@ -79,3 +79,7 @@ Five candidates were compared at 12 to 128px in both themes. The canonical mark 
 
 **Decided:** 2026-09-30, with the product owner.
 Vercel deploys from GitHub with the root directory `apps/web`. `pnpm vercel-build` applies migrations before building: always for production, and for previews only when `AUTHORO_MIGRATE_PREVIEWS=true`, i.e. when each preview has its own database branch. Without `NEXT_PUBLIC_APP_URL`, the public origin comes from Vercel's system variables (the production domain or the preview's branch URL), and Better Auth trusts every origin a deployment answers on. Previews without a Resend key log emails instead of refusing to send. See `docs/deploy.md`.
+
+## 017: Attestations name the author profile, not the account
+
+Author attestation payloads (`authoro-author-attestation/1.0`) carry `author`, the opaque ID of the author profile (byline or pen name) that attested, rather than the account ID. The payload is published so anyone can recompute its hash. Publishing account IDs would let readers link an account's pen names once multiple pen names exist. The account link stays private in `author_attestations.user_id`.

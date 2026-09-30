@@ -48,8 +48,12 @@ export interface AuthorAttestation {
   contentHash: string;
   /** Canonical-text fingerprint, when the version has one. */
   textHash?: string;
-  /** Authoro account that attested. */
-  account: string;
+  /**
+   * Opaque ID of the author profile (byline or pen name) that attested. The
+   * account behind it stays private, so pen names can't be linked through
+   * published attestations.
+   */
+  author: string;
   /** Hash of the creator's creation disclosure, binding it to this attestation. */
   disclosureHash?: string;
   legalNameHash: string;
@@ -68,7 +72,7 @@ export async function buildAuthorAttestation(input: {
   proofId: string;
   contentHash: string;
   textHash?: string | null;
-  account: string;
+  author: string;
   disclosureHash?: string | null;
   legalNameHash: string;
   signedAt: Date;
@@ -81,7 +85,7 @@ export async function buildAuthorAttestation(input: {
     proofId: input.proofId,
     contentHash: input.contentHash,
     ...(input.textHash ? { textHash: input.textHash } : {}),
-    account: input.account,
+    author: input.author,
     ...(input.disclosureHash ? { disclosureHash: input.disclosureHash } : {}),
     legalNameHash: input.legalNameHash,
     statementVersion,

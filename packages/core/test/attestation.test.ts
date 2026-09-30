@@ -23,7 +23,7 @@ describe("author attestation", () => {
       proofId: "AU-7K3F92",
       contentHash,
       textHash: null,
-      account: "user_123",
+      author: "profile_123",
       legalNameHash: await hashLegalName("Jane Smith", "salt"),
       signedAt,
     });
