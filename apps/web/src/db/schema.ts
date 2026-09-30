@@ -13,11 +13,13 @@ import {
   bigint,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -288,6 +290,25 @@ export const auditEvents = pgTable(
     createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index().on(table.actorId, table.createdAt), index().on(table.action, table.createdAt)],
+);
+
+/**
+ * Daily aggregate counters per record, for the V0 north-star metric (mark
+ * click-through). Counts only: no visitor identifiers, IPs or cookies.
+ */
+export const proofMetricsDaily = pgTable(
+  "proof_metrics_daily",
+  {
+    proofRecordId: uuid()
+      .notNull()
+      .references(() => proofRecords.id, { onDelete: "cascade" }),
+    day: date({ mode: "string" }).notNull(),
+    markImpressions: integer().default(0).notNull(),
+    markClicks: integer().default(0).notNull(),
+    pageViews: integer().default(0).notNull(),
+    verifications: integer().default(0).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.proofRecordId, table.day] })],
 );
 
 export const authorProfilesRelations = relations(authorProfiles, ({ one, many }) => ({

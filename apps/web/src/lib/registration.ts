@@ -268,6 +268,7 @@ export async function discardPendingRegistration(
 export async function listWorksForUser(db: Database, userId: string) {
   const rows = await db
     .select({
+      recordId: proofRecords.id,
       workId: works.publicId,
       workType: works.workType,
       createdAt: works.createdAt,
@@ -299,6 +300,8 @@ export async function findRegisteredByFingerprint(
       authorDisplayName: workVersions.authorDisplayName,
       registeredAt: proofRecords.registeredAt,
       ownerId: works.ownerId,
+      contentHash: workVersions.contentHash,
+      textHash: workVersions.textHash,
     })
     .from(workVersions)
     .innerJoin(proofRecords, eq(proofRecords.workVersionId, workVersions.id))

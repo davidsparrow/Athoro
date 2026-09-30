@@ -61,3 +61,12 @@ Security-relevant events (account created, session created, password reset or se
 - **Author-attached envelopes.** A Proof Envelope attached by the author must describe the same document (its `work.hash` matches the exact or text fingerprint). It is stored as its own attestation with `signature_status` `unsigned` or `unverifiable` (issuer keys arrive in V1) and shown as "Reported by X · submitted by the author · unverified".
 - **Duplicates are flagged, not blocked.** If the fingerprint matches a public registered record, the wizard says so and pauses. Authoro records who registered what and when; it doesn't adjudicate authorship.
 - **Drafts can be discarded** until attested. Registered records can only be withdrawn, and that is a forward-only status (chunk 6).
+
+## 014: Public records, the mark and verification
+
+- **Checking a copy needs no server.** The proof page ships the version fingerprints, and the reader's browser hashes their copy and compares. Only a count of checks is recorded. The global `/verify` lookup sends hashes, never content.
+- **Integrity is recomputed on every view.** The page re-hashes each stored attestation payload with canonical JSON and compares it to the recorded hash, so any tampering (even by someone with database access who bypassed the triggers) shows up as a failed check.
+- **Visibility.** Unattested drafts 404 publicly (the owner is sent to attestation). `private` records are owner-only and `unlisted` ones are served with `noindex`. Withdrawn records stay visible with a banner.
+- **Canonical IDs.** `/p/au-7k3f92` permanently redirects to `/p/AU-7K3F92`. The mark and all snippets link with `?ref=mark`.
+- **The mark image** contains only the validated ID, never user text. It is served with a restrictive CSP, CORS open, and 5-minute caching so impression counts stay meaningful and withdrawals propagate. Styles: `badge` (default) and `icon`; themes: `light` and `dark`.
+- **Metrics are aggregate daily counters** per record (`proof_metrics_daily`): mark impressions, mark clicks, record views and copies checked. No cookies, IPs or visitor IDs are stored. Owner views and obvious bots (including headless browsers) aren't counted. The owner sees totals on the record and the dashboard.

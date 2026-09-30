@@ -21,6 +21,9 @@ export async function SiteHeader() {
           <Link href="/#principles" className="hidden hover:text-ink md:inline">
             Principles
           </Link>
+          <Link href="/verify" className="hover:text-ink">
+            Verify
+          </Link>
           {session ? (
             <>
               <Link href="/dashboard" className="hover:text-ink">

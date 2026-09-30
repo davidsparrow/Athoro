@@ -3,9 +3,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Alert, Card, buttonClass } from "@/components/ui";
 import { db } from "@/db";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatNumber } from "@/lib/format";
+import { getMetricTotals } from "@/lib/proof";
 import { listWorksForUser } from "@/lib/registration";
 import { requireAuthor } from "@/lib/session";
+import { displayUrl, proofUrl } from "@/lib/urls";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -14,6 +16,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const { registered } = await searchParams;
   const justRegistered = typeof registered === "string" ? parseProofId(registered) : null;
   const works = await listWorksForUser(db, session.user.id);
+  const metrics = await getMetricTotals(
+    db,
+    works.map((work) => work.recordId),
+  );
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-12 sm:px-6">
@@ -35,9 +41,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       {justRegistered ? (
         <div className="mt-8">
           <Alert tone="success">
-            <span className="font-medium">Registered.</span> Your record{" "}
-            <span className="font-mono">{justRegistered}</span> is permanent. Its public page and Authoro Mark
-            arrive in the next update.
+            <span className="font-medium">Registered.</span> Your record is live at{" "}
+            <Link href={`/p/${justRegistered}`} className="font-mono underline underline-offset-4">
+              {displayUrl(proofUrl(justRegistered))}
+            </Link>
+            .{" "}
+            <Link href={`/p/${justRegistered}#embed`} className="underline underline-offset-4">
+              Get the Authoro Mark
+            </Link>
           </Alert>
         </div>
       ) : null}
@@ -50,7 +61,18 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
               {works.map((work) => (
                 <li key={work.proofId} className="flex flex-wrap items-center justify-between gap-3 py-4">
                   <div className="min-w-0">
-                    <p className="truncate font-medium">{work.title}</p>
+                    <p className="truncate font-medium">
+                      {work.status === "pending_attestation" ? (
+                        work.title
+                      ) : (
+                        <Link
+                          href={`/p/${work.proofId}`}
+                          className="hover:underline hover:underline-offset-4"
+                        >
+                          {work.title}
+                        </Link>
+                      )}
+                    </p>
                     <p className="mt-0.5 text-sm text-ink-muted">
                       {WORK_TYPES[work.workType as WorkType] ?? work.workType} · v{work.versionNumber} ·{" "}
                       <span className="font-mono">{work.proofId}</span>
@@ -61,9 +83,13 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                       Finish attestation
                     </Link>
                   ) : (
-                    <span className="text-sm text-ink-muted">
+                    <span className="text-right text-sm text-ink-muted">
                       {work.status === "registered" ? "Registered" : "Withdrawn"}
                       {work.registeredAt ? ` ${formatDate(work.registeredAt)}` : ""}
+                      <span className="block text-xs">
+                        {formatNumber(metrics.get(work.recordId)?.markClicks ?? 0)} mark clicks ·{" "}
+                        {formatNumber(metrics.get(work.recordId)?.pageViews ?? 0)} views
+                      </span>
                     </span>
                   )}
                 </li>

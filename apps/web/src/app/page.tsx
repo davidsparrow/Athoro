@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AuthoroMark } from "@/components/authoro-mark";
+import { IdLookup } from "@/components/id-lookup";
 import { buttonClass } from "@/components/ui";
 
 const STEPS = [
@@ -61,6 +62,22 @@ export default function Home() {
               authoro.net/p/<span className="font-mono text-ink">AU-7K3F92</span>
             </span>
           </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-5xl px-4 pb-16 sm:px-6">
+        <div className="flex flex-col gap-4 rounded-xl border border-line bg-paper-raised p-6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-medium">Saw the Authoro Mark somewhere?</h2>
+            <p className="mt-1 text-sm text-ink-muted">
+              Look up its record, or{" "}
+              <Link href="/verify" className="text-ink underline underline-offset-4">
+                check a document
+              </Link>
+              .
+            </p>
+          </div>
+          <IdLookup />
         </div>
       </section>
 

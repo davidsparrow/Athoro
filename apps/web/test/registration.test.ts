@@ -1,4 +1,3 @@
-import "dotenv/config";
 import {
   fingerprintPastedText,
   hashCanonicalJson,
@@ -9,10 +8,7 @@ import {
 } from "@authoro/core";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createDatabase } from "@/db/client";
-import { attestations, authorAttestations, proofRecords, recordEvents, user, works } from "@/db/schema";
-import { createAuthorProfile } from "@/lib/profiles";
-import { createProfileSchema } from "@/lib/profile-validation";
+import { attestations, authorAttestations, proofRecords, recordEvents, works } from "@/db/schema";
 import {
   discardPendingRegistration,
   finalizeRegistration,
@@ -22,42 +18,10 @@ import {
   prepareRegistration,
   RegistrationError,
 } from "@/lib/registration";
-import { validateRegistration, type RegistrationInput } from "@/lib/registration-validation";
+import { validateRegistration } from "@/lib/registration-validation";
+import { createAuthor, sampleInput, testDatabase, valid } from "./helpers";
 
-const url = process.env.TEST_DATABASE_URL;
-const db = url ? createDatabase(url, { max: 1 }) : null;
-
-async function sampleInput(text = "The future of independent software is small.") {
-  const fp = await fingerprintPastedText(text);
-  return {
-    work: {
-      title: "The Future of Independent Software",
-      workType: "essay",
-      canonicalUrl: "",
-      description: "",
-    },
-    document: {
-      source: "text",
-      contentHash: fp.contentHash,
-      textHash: fp.textHash ?? null,
-      mediaType: fp.mediaType,
-      byteLength: fp.byteLength,
-      wordCount: fp.wordCount ?? null,
-    },
-    disclosure: {
-      methods: ["ai-assisted"],
-      aiUses: ["editing"],
-      aiTools: ["Claude"],
-      note: "Copyediting only.",
-    },
-  } satisfies RegistrationInput;
-}
-
-function valid(input: unknown) {
-  const result = validateRegistration(input);
-  if (!result.ok) throw new Error(result.errors.join("; "));
-  return result.data;
-}
+const db = testDatabase();
 
 describe("validateRegistration", () => {
   it("accepts a complete registration and normalizes empty fields", async () => {
@@ -102,24 +66,7 @@ describe("validateRegistration", () => {
 describe.skipIf(!db)("registration lifecycle", () => {
   const d = db!;
 
-  async function author(handle = "jane") {
-    const userId = `user_${crypto.randomUUID()}`;
-    await d
-      .insert(user)
-      .values({ id: userId, name: "Jane", email: `${userId}@example.com`, emailVerified: true });
-    const profile = await createAuthorProfile(
-      d,
-      userId,
-      createProfileSchema.parse({
-        handle,
-        displayName: "Jane Smith",
-        bio: "",
-        websiteUrl: "",
-        isPublic: true,
-      }),
-    );
-    return { userId, profile };
-  }
+  const author = (handle?: string) => createAuthor(d, handle);
 
   beforeEach(async () => {
     await d.execute(sql`TRUNCATE "user" CASCADE`);
