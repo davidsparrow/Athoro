@@ -12,6 +12,7 @@ import {
   type CreationMethod,
   type WorkType,
 } from "@authoro/core";
+import Link from "next/link";
 import { useState, useTransition, type ReactNode } from "react";
 import { Alert, Button, Field, inputClass } from "@/components/ui";
 import { formatBytes, formatDate, formatNumber } from "@/lib/format";
@@ -21,23 +22,42 @@ import {
   workDetailsSchema,
   type RegistrationInput,
 } from "@/lib/registration-validation";
-import { checkFingerprintAction, prepareRegistrationAction, type FingerprintMatch } from "./actions";
+import {
+  checkFingerprintAction,
+  prepareRegistrationAction,
+  prepareVersionAction,
+  type FingerprintMatch,
+  type PrepareResult,
+} from "./actions";
 
 const STEPS = ["The work", "The document", "How it was made", "Review"] as const;
 const AI_METHODS: CreationMethod[] = ["ai-assisted", "ai-generated-sections"];
 
 type DocumentFingerprint = RegistrationInput["document"] & { label: string };
 
-export function RegisterWizard({ byline }: { byline: string }) {
+/** Registering the next version of an existing work. */
+export interface NewVersionContext {
+  workId: string;
+  versionNumber: number;
+  /** Fixed by the work. */
+  workType: WorkType;
+  /** Details of the latest version, to start from. */
+  initial: { title: string; canonicalUrl: string; description: string };
+  /** Every earlier version, including drafts and withdrawn ones. */
+  previous: { versionNumber: number; proofId: string; contentHash: string; textHash: string | null }[];
+}
+
+export function RegisterWizard({ byline, newVersion }: { byline: string; newVersion?: NewVersionContext }) {
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<string[]>([]);
+  const [conflict, setConflict] = useState<PrepareResult["conflict"]>();
   const [submitting, startSubmit] = useTransition();
 
   const [work, setWork] = useState({
-    title: "",
-    workType: "article" as WorkType,
-    canonicalUrl: "",
-    description: "",
+    title: newVersion?.initial.title ?? "",
+    workType: newVersion?.workType ?? ("article" as WorkType),
+    canonicalUrl: newVersion?.initial.canonicalUrl ?? "",
+    description: newVersion?.initial.description ?? "",
   });
 
   const [docMode, setDocMode] = useState<"file" | "text">("file");
@@ -54,6 +74,19 @@ export function RegisterWizard({ byline }: { byline: string }) {
   const [showEnvelope, setShowEnvelope] = useState(false);
 
   const usedAi = methods.some((method) => AI_METHODS.includes(method));
+  const previousProofIds = new Set(newVersion?.previous.map((version) => version.proofId));
+
+  /** An earlier version with exactly these bytes; a new version must differ. */
+  function identicalVersionOf(fingerprint: DocumentFingerprint | null) {
+    return fingerprint
+      ? newVersion?.previous.find((version) => version.contentHash === fingerprint.contentHash)
+      : undefined;
+  }
+  const identicalVersion = identicalVersionOf(document);
+  const sameTextVersion =
+    document?.textHash && !identicalVersion
+      ? newVersion?.previous.find((version) => version.textHash === document.textHash)
+      : undefined;
 
   function buildInput(fingerprint = document): RegistrationInput | null {
     if (!fingerprint) return null;
@@ -88,8 +121,10 @@ export function RegisterWizard({ byline }: { byline: string }) {
       contentHash: fingerprint.contentHash,
       textHash: fingerprint.textHash,
     });
-    setMatches(found);
-    return found;
+    // Earlier versions of this work are expected matches, handled separately.
+    const others = found.filter((match) => !previousProofIds.has(match.proofId));
+    setMatches(others);
+    return others;
   }
 
   async function onFile(file: File | undefined) {
@@ -131,7 +166,7 @@ export function RegisterWizard({ byline }: { byline: string }) {
         setHashing(true);
         try {
           const fingerprint = await fingerprintPastedText(pastedText);
-          const found = await adoptFingerprint({
+          const pasted: DocumentFingerprint = {
             source: "text",
             label: "Pasted text",
             contentHash: fingerprint.contentHash,
@@ -139,14 +174,17 @@ export function RegisterWizard({ byline }: { byline: string }) {
             mediaType: fingerprint.mediaType,
             byteLength: fingerprint.byteLength,
             wordCount: fingerprint.wordCount ?? null,
-          });
+          };
+          const found = await adoptFingerprint(pasted);
           // Pause so the author sees the duplicate notice; continuing again proceeds.
-          if (found.length) return;
+          if (found.length || identicalVersionOf(pasted)) return;
         } finally {
           setHashing(false);
         }
       } else if (!document) {
         return setErrors(["Choose a file to fingerprint."]);
+      } else if (identicalVersion) {
+        return;
       }
     }
     if (step === 2) {
@@ -167,9 +205,13 @@ export function RegisterWizard({ byline }: { byline: string }) {
     const input = buildInput();
     if (!input) return;
     setErrors([]);
+    setConflict(undefined);
     startSubmit(async () => {
-      const result = await prepareRegistrationAction(input);
+      const result = newVersion
+        ? await prepareVersionAction(newVersion.workId, input)
+        : await prepareRegistrationAction(input);
       if (result?.errors) setErrors(result.errors);
+      setConflict(result?.conflict);
     });
   }
 
@@ -207,6 +249,16 @@ export function RegisterWizard({ byline }: { byline: string }) {
               <li key={error}>{error}</li>
             ))}
           </ul>
+          {conflict ? (
+            <Link
+              href={
+                conflict.code === "draft-exists" ? `/attest/${conflict.proofId}` : `/p/${conflict.proofId}`
+              }
+              className="mt-2 inline-block font-medium underline underline-offset-4"
+            >
+              {conflict.code === "draft-exists" ? "Open the draft" : `View ${conflict.proofId}`}
+            </Link>
+          ) : null}
         </Alert>
       ) : null}
 
@@ -221,10 +273,15 @@ export function RegisterWizard({ byline }: { byline: string }) {
               className={inputClass}
             />
           </Field>
-          <Field label="Type of work" htmlFor="workType">
+          <Field
+            label="Type of work"
+            htmlFor="workType"
+            hint={newVersion ? "Every version of a work has the same type." : undefined}
+          >
             <select
               id="workType"
               value={work.workType}
+              disabled={Boolean(newVersion)}
               onChange={(event) => setWork({ ...work, workType: event.target.value as WorkType })}
               className={inputClass}
             >
@@ -323,6 +380,21 @@ export function RegisterWizard({ byline }: { byline: string }) {
           )}
 
           {document ? <FingerprintSummary document={document} /> : null}
+          {identicalVersion ? (
+            <Alert tone="error">
+              <p className="font-medium">
+                This is identical to version {identicalVersion.versionNumber} (
+                <span className="font-mono">{identicalVersion.proofId}</span>).
+              </p>
+              <p className="mt-1">A new version needs changed content. Choose the revised document.</p>
+            </Alert>
+          ) : sameTextVersion ? (
+            <Alert tone="info">
+              The text matches version {sameTextVersion.versionNumber} (
+              <span className="font-mono">{sameTextVersion.proofId}</span>); only the file or its formatting
+              differs. Readers checking pasted text will match both versions.
+            </Alert>
+          ) : null}
           <DuplicateNotice matches={matches} />
         </div>
       ) : null}
@@ -465,6 +537,7 @@ export function RegisterWizard({ byline }: { byline: string }) {
 
       {step === 3 && document ? (
         <Review
+          versionNumber={newVersion?.versionNumber}
           byline={byline}
           work={work}
           document={document}
@@ -492,7 +565,7 @@ export function RegisterWizard({ byline }: { byline: string }) {
           <span />
         )}
         {step < STEPS.length - 1 ? (
-          <Button onClick={next} disabled={hashing}>
+          <Button onClick={next} disabled={hashing || (step === 1 && Boolean(identicalVersion))}>
             {hashing ? "Fingerprinting…" : "Continue"}
           </Button>
         ) : (
@@ -559,6 +632,7 @@ function DuplicateNotice({ matches }: { matches: FingerprintMatch[] }) {
 }
 
 function Review(props: {
+  versionNumber?: number;
   byline: string;
   work: { title: string; workType: WorkType; canonicalUrl: string; description: string };
   document: DocumentFingerprint;
@@ -570,6 +644,7 @@ function Review(props: {
   matches: FingerprintMatch[];
 }) {
   const rows: [string, ReactNode][] = [
+    ...(props.versionNumber ? [["Version", `Version ${props.versionNumber}`] as [string, ReactNode]] : []),
     ["Title", props.work.title],
     ["Byline", props.byline],
     ["Type", WORK_TYPES[props.work.workType]],

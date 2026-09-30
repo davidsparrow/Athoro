@@ -1,16 +1,27 @@
 "use server";
 
-import { hashStringSchema } from "@authoro/core";
+import { hashStringSchema, parseWorkId } from "@authoro/core";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
 import { recordAudit } from "@/lib/audit";
-import { findRegisteredByFingerprint, prepareRegistration } from "@/lib/registration";
+import {
+  findRegisteredByFingerprint,
+  prepareRegistration,
+  prepareVersion,
+  RegistrationError,
+} from "@/lib/registration";
 import { validateRegistration } from "@/lib/registration-validation";
 import { getSession, requireAuthor } from "@/lib/session";
 
-export async function prepareRegistrationAction(input: unknown): Promise<{ errors: string[] }> {
+export interface PrepareResult {
+  errors: string[];
+  /** A draft or an identical earlier version that stops a new version. */
+  conflict?: { code: "draft-exists" | "unchanged"; proofId: string };
+}
+
+export async function prepareRegistrationAction(input: unknown): Promise<PrepareResult> {
   const { session, profile } = await requireAuthor("/register");
   const validation = validateRegistration(input);
   if (!validation.ok) return { errors: validation.errors };
@@ -34,6 +45,49 @@ export async function prepareRegistrationAction(input: unknown): Promise<{ error
     headers: await headers(),
   });
   redirect(`/attest/${proofId}`);
+}
+
+/** Prepares the next version of one of the author's works, then sends them to attest it. */
+export async function prepareVersionAction(workIdInput: string, input: unknown): Promise<PrepareResult> {
+  const workId = parseWorkId(workIdInput);
+  if (!workId) return { errors: ["Work not found."] };
+  const { session, profile } = await requireAuthor(`/register?work=${workId}`);
+  const validation = validateRegistration(input);
+  if (!validation.ok) return { errors: validation.errors };
+
+  let prepared: Awaited<ReturnType<typeof prepareVersion>>;
+  try {
+    prepared = await prepareVersion(db, {
+      userId: session.user.id,
+      profile,
+      workPublicId: workId,
+      registration: validation.data,
+    });
+  } catch (error) {
+    if (!(error instanceof RegistrationError)) throw error;
+    const { code, proofId } = error;
+    return {
+      errors: [error.message],
+      ...((code === "draft-exists" || code === "unchanged") && proofId
+        ? { conflict: { code, proofId } }
+        : {}),
+    };
+  }
+  await recordAudit({
+    actorType: "user",
+    actorId: session.user.id,
+    action: "registration.prepared",
+    targetType: "proof_record",
+    targetId: prepared.proofId,
+    metadata: {
+      workId,
+      versionNumber: prepared.versionNumber,
+      source: validation.data.document.source,
+      envelope: Boolean(validation.data.envelope),
+    },
+    headers: await headers(),
+  });
+  redirect(`/attest/${prepared.proofId}`);
 }
 
 const fingerprintQuery = z.object({ contentHash: hashStringSchema, textHash: hashStringSchema.nullable() });

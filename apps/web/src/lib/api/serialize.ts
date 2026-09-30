@@ -3,6 +3,21 @@ import { embedSnippets } from "@/lib/embed";
 import type { PublicProof } from "@/lib/proof";
 import { proofUrl } from "@/lib/urls";
 
+type ProofEvent = PublicProof["events"][number];
+
+/** Public details per event type, listed explicitly so private event data never leaks. */
+function eventDetails(event: ProofEvent): Record<string, unknown> {
+  const data = (event.data ?? {}) as Record<string, unknown>;
+  switch (event.eventType) {
+    case "newer-version-registered":
+      return { proofId: data.proofId ?? null, version: data.versionNumber ?? null };
+    case "withdrawn":
+      return { reason: data.reason ?? null, note: data.note ?? null };
+    default:
+      return {};
+  }
+}
+
 /**
  * The public JSON form of a proof record: everything the proof page shows,
  * with full payloads and hashes so anyone can re-verify them. Never includes
@@ -70,7 +85,11 @@ export async function serializePublicProof(proof: PublicProof, origin: string) {
       registeredAt: v.registeredAt?.toISOString() ?? null,
       url: proofUrl(v.proofId, origin),
     })),
-    events: events.map((event) => ({ type: event.eventType, at: event.createdAt.toISOString() })),
+    events: events.map((event) => ({
+      type: event.eventType,
+      at: event.createdAt.toISOString(),
+      ...eventDetails(event),
+    })),
     mark: {
       svg: `${url}/mark.svg`,
       html: embedSnippets(record.publicId, origin).find((snippet) => snippet.id === "html")?.code ?? null,

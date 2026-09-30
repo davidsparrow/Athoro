@@ -19,13 +19,16 @@ import { headers } from "next/headers";
 import { after } from "next/server";
 import { cache, type ReactNode } from "react";
 import { AuthoroMark } from "@/components/authoro-mark";
+import { buttonClass } from "@/components/ui";
 import { db } from "@/db";
 import { formatBytes, formatDate, formatDateTime, formatNumber } from "@/lib/format";
-import { getMetricTotals, getPublicProof, incrementMetric, isLikelyBot } from "@/lib/proof";
+import { getMetricTotals, getPublicProof, incrementMetric, isLikelyBot, type PublicProof } from "@/lib/proof";
+import { isWithdrawalReason, WITHDRAWAL_REASONS } from "@/lib/registration";
 import { getSession } from "@/lib/session";
 import { appOrigin, displayUrl, proofUrl } from "@/lib/urls";
 import { EmbedPanel } from "./embed-panel";
 import { VerifyCopy } from "./verify-copy";
+import { WithdrawForm } from "./withdraw-form";
 
 const loadProof = cache(async (proofId: string) => {
   const session = await getSession();
@@ -90,6 +93,10 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
   const allEvidenceIntact = evidenceIntact.every(Boolean);
   const metrics = proof.isOwner ? (await getMetricTotals(db, [record.id])).get(record.id) : undefined;
 
+  // Point older records at the newest registered version (or the newest at all, if every later one was withdrawn).
+  const newer = versions.filter((v) => v.versionNumber > version.versionNumber);
+  const newest = newer.findLast((v) => v.status === "registered") ?? newer.at(-1);
+
   return (
     <article className="mx-auto w-full max-w-3xl px-4 py-12 sm:py-16">
       <header>
@@ -101,8 +108,14 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
         </div>
         <h1 className="mt-6 font-serif text-4xl leading-tight tracking-tight sm:text-5xl">{version.title}</h1>
         <p className="mt-4 text-ink-muted">
-          <span className="text-ink">{author.displayName}</span> ·{" "}
-          {WORK_TYPES[work.workType as WorkType] ?? work.workType} · Registered{" "}
+          {author.isPublic ? (
+            <Link href={`/a/${author.handle}`} className="text-ink underline-offset-4 hover:underline">
+              {author.displayName}
+            </Link>
+          ) : (
+            <span className="text-ink">{author.displayName}</span>
+          )}{" "}
+          · {WORK_TYPES[work.workType as WorkType] ?? work.workType} · Registered{" "}
           {record.registeredAt ? formatDate(record.registeredAt) : "—"}
         </p>
         {version.canonicalUrl ? (
@@ -128,6 +141,22 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
           <p className="mt-1 text-ink-muted">
             The record stays visible so its history can still be checked.
             {record.withdrawnReason ? ` Reason given: ${record.withdrawnReason}` : ""}
+          </p>
+        </div>
+      ) : null}
+
+      {newest ? (
+        <div role="status" className="mt-8 rounded-xl border border-line bg-paper-sunken p-4 text-sm">
+          <p className="font-medium">
+            A newer version exists:{" "}
+            <Link href={`/p/${newest.proofId}`} className="underline underline-offset-4">
+              Version {newest.versionNumber} ({newest.proofId})
+            </Link>
+            {newest.status === "withdrawn" ? ", since withdrawn" : ""}
+          </p>
+          <p className="mt-1 text-ink-muted">
+            This record still stands for version {version.versionNumber}, as registered
+            {record.registeredAt ? ` on ${formatDate(record.registeredAt)}` : ""}.
           </p>
         </div>
       ) : null}
@@ -269,6 +298,7 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
               <li key={v.proofId} className="flex items-center justify-between gap-3 px-5 py-3">
                 <span>
                   Version {v.versionNumber}
+                  {v.status === "withdrawn" ? <span className="text-ink-muted"> · withdrawn</span> : null}
                   {v.proofId === proofId ? <span className="ml-2 text-ink-muted">(this record)</span> : null}
                 </span>
                 <Link href={`/p/${v.proofId}`} className="font-mono text-ink-muted hover:text-ink">
@@ -325,10 +355,7 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
               authorAttestation
                 ? ["Statement", `Author attestation v${authorAttestation.statementVersion}`]
                 : null,
-              ...proof.events.map((event): [string, ReactNode] => [
-                humanize(event.eventType),
-                formatDateTime(event.createdAt),
-              ]),
+              ...proof.events.map(describeEvent),
             ]}
           />
           <p className="mt-4 text-xs text-ink-muted">
@@ -342,29 +369,113 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
       </details>
 
       {proof.isOwner ? (
-        <section id="embed" className="mt-12 rounded-xl border border-accent/40 bg-paper-raised p-6">
-          <p className="text-xs font-medium tracking-wide text-accent uppercase">Only you can see this</p>
-          <h2 className="mt-2 font-serif text-2xl">Embed the Authoro Mark</h2>
-          <p className="mt-1 mb-5 text-sm text-ink-muted">
-            Put the mark beside your byline. Readers who click it land on this record.
-          </p>
-          <EmbedPanel proofId={proofId} origin={appOrigin()} />
-          {metrics ? (
-            <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-line pt-6 text-sm sm:grid-cols-4">
-              <Stat label="Mark views" value={metrics.markImpressions} />
-              <Stat label="Mark clicks" value={metrics.markClicks} />
-              <Stat label="Record views" value={metrics.pageViews} />
-              <Stat label="Copies checked" value={metrics.verifications} />
-            </dl>
-          ) : (
-            <p className="mt-6 border-t border-line pt-6 text-sm text-ink-muted">
-              Views and clicks from readers will appear here.
-            </p>
-          )}
-        </section>
+        <div className="mt-12 space-y-6">
+          <section id="embed" className="rounded-xl border border-accent/40 bg-paper-raised p-6">
+            <p className="text-xs font-medium tracking-wide text-accent uppercase">Only you can see this</p>
+            <h2 className="mt-2 font-serif text-2xl">Embed the Authoro Mark</h2>
+            {record.status === "withdrawn" ? (
+              <p className="mt-1 text-sm text-ink-muted">
+                This record is withdrawn, so its mark now says so wherever it&apos;s embedded.
+              </p>
+            ) : (
+              <>
+                <p className="mt-1 mb-5 text-sm text-ink-muted">
+                  Put the mark beside your byline. Readers who click it land on this record.
+                  {newest?.status === "registered"
+                    ? ` To point readers at version ${newest.versionNumber}, embed its mark instead.`
+                    : ""}
+                </p>
+                <EmbedPanel proofId={proofId} origin={appOrigin()} />
+              </>
+            )}
+            {metrics ? (
+              <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-line pt-6 text-sm sm:grid-cols-4">
+                <Stat label="Mark views" value={metrics.markImpressions} />
+                <Stat label="Mark clicks" value={metrics.markClicks} />
+                <Stat label="Record views" value={metrics.pageViews} />
+                <Stat label="Copies checked" value={metrics.verifications} />
+              </dl>
+            ) : (
+              <p className="mt-6 border-t border-line pt-6 text-sm text-ink-muted">
+                Views and clicks from readers will appear here.
+              </p>
+            )}
+          </section>
+
+          <section id="manage" className="rounded-xl border border-line bg-paper-raised p-6">
+            <p className="text-xs font-medium tracking-wide text-accent uppercase">Only you can see this</p>
+            <h2 className="mt-2 font-serif text-2xl">Manage this work</h2>
+            <div className="mt-5 divide-y divide-line">
+              <div className="pb-6">
+                <h3 className="font-medium">Register a new version</h3>
+                <p className="mt-1 text-sm text-ink-muted">
+                  Revised it? The new version gets its own ID and record. This record stays as it is and notes
+                  that a newer version exists.
+                </p>
+                <Link href={`/register?work=${work.publicId}`} className={buttonClass("secondary", "mt-4")}>
+                  Register a new version
+                </Link>
+              </div>
+              <div className="pt-6">
+                <h3 className="font-medium">Withdraw this record</h3>
+                {record.status === "registered" ? (
+                  <>
+                    <p className="mt-1 text-sm text-ink-muted">
+                      Withdraw it if it was registered by mistake or its details are wrong. Nothing is
+                      deleted: the record stays public with a withdrawn notice and your reason, and it
+                      can&apos;t be undone.
+                    </p>
+                    <WithdrawForm proofId={proofId} reasons={Object.entries(WITHDRAWAL_REASONS)} />
+                  </>
+                ) : (
+                  <p className="mt-1 text-sm text-ink-muted">
+                    Withdrawn{record.withdrawnAt ? ` on ${formatDate(record.withdrawnAt)}` : ""}. Withdrawal
+                    is final.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+        </div>
       ) : null}
     </article>
   );
+}
+
+/** A plain-English line for each entry in the record's history. */
+function describeEvent(event: PublicProof["events"][number]): [string, ReactNode] {
+  const data = (event.data ?? {}) as Record<string, unknown>;
+  const at = formatDateTime(event.createdAt);
+  switch (event.eventType) {
+    case "registered":
+      return ["Registered", at];
+    case "newer-version-registered": {
+      const newerId = typeof data.proofId === "string" ? data.proofId : null;
+      return [
+        "Newer version",
+        <>
+          Version {String(data.versionNumber ?? "")} registered
+          {newerId ? (
+            <>
+              {" "}
+              as{" "}
+              <Link href={`/p/${newerId}`} className="font-mono underline underline-offset-4">
+                {newerId}
+              </Link>
+            </>
+          ) : null}
+          , {at}
+        </>,
+      ];
+    }
+    case "withdrawn":
+      return [
+        "Withdrawn",
+        `By the author, ${at}${isWithdrawalReason(data.reason) ? `. Reason: ${WITHDRAWAL_REASONS[data.reason]}` : ""}`,
+      ];
+    default:
+      return [humanize(event.eventType), at];
+  }
 }
 
 function humanize(key: string): string {
@@ -439,8 +550,8 @@ function Rows({ rows }: { rows: ([string, ReactNode] | null)[] }) {
     <dl className="mt-3 space-y-2 text-sm">
       {rows
         .filter((row): row is [string, ReactNode] => row !== null)
-        .map(([label, value]) => (
-          <div key={label} className="grid gap-1 sm:grid-cols-[10rem_1fr]">
+        .map(([label, value], index) => (
+          <div key={`${label}-${index}`} className="grid gap-1 sm:grid-cols-[10rem_1fr]">
             <dt className="text-ink-muted">{label}</dt>
             <dd className="break-words">{value}</dd>
           </div>

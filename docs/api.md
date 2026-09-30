@@ -2,12 +2,13 @@
 
 Base URL: `https://authoro.net/api/v1`. All requests and responses are JSON.
 
-| Endpoint           | Auth    | Purpose                                                        |
-| ------------------ | ------- | -------------------------------------------------------------- |
-| `GET /proofs/{id}` | none    | A public record, with full evidence payloads and hashes        |
-| `POST /verify`     | none    | Check hashes against a record, or find records matching hashes |
-| `POST /works`      | API key | Prepare a registration (the author then attests in person)     |
-| `GET /works`       | API key | List the key owner's registrations                             |
+| Endpoint                    | Auth    | Purpose                                                        |
+| --------------------------- | ------- | -------------------------------------------------------------- |
+| `GET /proofs/{id}`          | none    | A public record, with full evidence payloads and hashes        |
+| `POST /verify`              | none    | Check hashes against a record, or find records matching hashes |
+| `POST /works`               | API key | Prepare a registration (the author then attests in person)     |
+| `POST /works/{id}/versions` | API key | Prepare the next version of a work                             |
+| `GET /works`                | API key | List the key owner's registrations                             |
 
 Looking up and verifying records is free and needs no key. Public endpoints send `Access-Control-Allow-Origin: *`, so any website can call them from the browser. Keyed endpoints are for servers only: never ship an API key to a browser.
 
@@ -40,14 +41,18 @@ Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-R
 }
 ```
 
-| Status | Code                                            | Meaning                                                                |
-| ------ | ----------------------------------------------- | ---------------------------------------------------------------------- |
-| 400    | `invalid_json`, `invalid_request`, `invalid_id` | Malformed body, failed validation (see `details`), or a bad Authoro ID |
-| 401    | `unauthorized`                                  | Missing, invalid or revoked API key                                    |
-| 404    | `not_found`                                     | No public record with that ID                                          |
-| 409    | `profile_required`                              | The key's account hasn't set up an author profile yet                  |
-| 413    | `payload_too_large`                             | Bodies are limited to 128 KB                                           |
-| 429    | `rate_limited`                                  | Slow down; see `Retry-After`                                           |
+| Status | Code                                            | Meaning                                                                     |
+| ------ | ----------------------------------------------- | --------------------------------------------------------------------------- |
+| 400    | `invalid_json`, `invalid_request`, `invalid_id` | Malformed body, failed validation (see `details`), or a bad Authoro ID      |
+| 401    | `unauthorized`                                  | Missing, invalid or revoked API key                                         |
+| 404    | `not_found`                                     | No public record with that ID, or no work with that ID in the key's account |
+| 409    | `profile_required`                              | The key's account hasn't set up an author profile yet                       |
+| 409    | `draft_exists`                                  | The work already has a version waiting for attestation (see `proofId`)      |
+| 409    | `unchanged`                                     | The document is identical to an earlier version of the work (see `proofId`) |
+| 413    | `payload_too_large`                             | Bodies are limited to 128 KB                                                |
+| 429    | `rate_limited`                                  | Slow down; see `Retry-After`                                                |
+
+Conflict errors name the record behind them in `error.proofId`.
 
 ## Fingerprints
 
@@ -118,10 +123,15 @@ IDs are case-insensitive. The response is abridged here:
     }
   ],
   "versions": [{ "id": "AU-7K3F92", "number": 1, "status": "registered", "url": "…" }],
-  "events": [{ "type": "registered", "at": "…" }],
+  "events": [
+    { "type": "registered", "at": "…" },
+    { "type": "newer-version-registered", "at": "…", "proofId": "AU-M4X2Q8", "version": 2 }
+  ],
   "mark": { "svg": "https://authoro.net/p/AU-7K3F92/mark.svg", "html": "<a href=…" }
 }
 ```
+
+`events` is the record's append-only history: `registered`, `newer-version-registered` (with the newer version's `proofId` and `version`) and `withdrawn` (with the `reason` code and the author's `note`, or `null`). A record with a newer version stays valid; follow `versions` to find the latest. A withdrawn record has `status: "withdrawn"` and a `withdrawn` object with the time and the reason as shown on the record.
 
 `intact` is recomputed on every request: the stored payload's canonical-JSON ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)) SHA-256 still equals the recorded hash. You can check it yourself with `hashCanonicalJson` from `@authoro/core`.
 
@@ -230,6 +240,7 @@ Response `201`:
   "object": "registration",
   "proofId": "AU-7K3F92",
   "workId": "AUW-4F8Q2M9C",
+  "version": 1,
   "status": "pending_attestation",
   "attestUrl": "https://authoro.net/attest/AU-7K3F92",
   "proofUrl": "https://authoro.net/p/AU-7K3F92",
@@ -238,6 +249,67 @@ Response `201`:
 ```
 
 Until the author attests, `GET /proofs/{id}` returns `404` and the record appears in their dashboard under _Finish attestation_.
+
+## `POST /works/{id}/versions`
+
+Prepares the next version of one of your works, for example after revising an essay. The new version gets its own Authoro ID and record. Earlier records stay valid; once the author attests, the previous one gains a `newer-version-registered` event.
+
+```bash
+curl -X POST https://authoro.net/api/v1/works/AUW-4F8Q2M9C/versions \
+  -H "Authorization: Bearer $AUTHORO_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d @version.json
+```
+
+The body is the same as for `POST /works`, except that `work` is optional:
+
+```json
+{
+  "work": { "description": "Revised for the print edition." },
+  "document": {
+    "contentHash": "sha256:…",
+    "textHash": "sha256:…",
+    "mediaType": "text/html",
+    "byteLength": 362,
+    "wordCount": 31
+  },
+  "disclosure": { "methods": ["manual"] }
+}
+```
+
+- **`work`:** fields you leave out carry over from the latest version. Send `""` to clear `canonicalUrl` or `description`.
+- **`work.workType`:** fixed by the work. Leave it out; a different type returns `400`.
+- **`document`:** must differ from every earlier version. Identical bytes return `409 unchanged`.
+- **One draft at a time:** while a version waits for attestation, another returns `409 draft_exists`. The author finishes or discards the draft first.
+
+Response `201`, with `Location` set to `attestUrl`:
+
+```json
+{
+  "object": "registration",
+  "proofId": "AU-M4X2Q8",
+  "workId": "AUW-4F8Q2M9C",
+  "version": 2,
+  "status": "pending_attestation",
+  "attestUrl": "https://authoro.net/attest/AU-M4X2Q8",
+  "proofUrl": "https://authoro.net/p/AU-M4X2Q8",
+  "message": "Prepared version 2. The author must open attestUrl, review the details and attest before the record is public."
+}
+```
+
+A conflict names the record in the way:
+
+```json
+{
+  "error": {
+    "code": "draft_exists",
+    "message": "Version 2 (AU-M4X2Q8) is waiting for attestation. Finish or discard it first.",
+    "proofId": "AU-M4X2Q8"
+  }
+}
+```
+
+Work IDs are case-insensitive. A work that doesn't exist or belongs to another account returns `404`.
 
 ## `GET /works`
 

@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { authorProfiles } from "@/db/schema";
 import { apiError, handle, json, readJson, requireApiKey } from "@/lib/api/http";
+import { registrationInputFromBody } from "@/lib/api/registration-input";
 import { recordAudit } from "@/lib/audit";
+import { getProfileByUserId } from "@/lib/profiles";
 import { listWorksForUser, prepareRegistration } from "@/lib/registration";
 import { validateRegistration } from "@/lib/registration-validation";
 import { appOrigin, proofUrl } from "@/lib/urls";
@@ -16,18 +16,7 @@ export async function POST(request: Request) {
   return handle(async () => {
     const { key, headers } = await requireApiKey(request);
     const body = await readJson(request, headers);
-    const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-    const { envelope, ...rest } = input;
-    const validation = validateRegistration({
-      ...rest,
-      document: { ...(input.document as object), source: "api" },
-      envelopeJson:
-        envelope === undefined
-          ? undefined
-          : typeof envelope === "string"
-            ? envelope
-            : JSON.stringify(envelope),
-    });
+    const validation = validateRegistration(registrationInputFromBody(body));
     if (!validation.ok) {
       return apiError(400, "invalid_request", "The registration is invalid.", {
         headers,
@@ -35,11 +24,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const [profile] = await db
-      .select()
-      .from(authorProfiles)
-      .where(eq(authorProfiles.userId, key.userId))
-      .limit(1);
+    const profile = await getProfileByUserId(db, key.userId);
     if (!profile) {
       return apiError(
         409,
@@ -72,6 +57,7 @@ export async function POST(request: Request) {
         object: "registration",
         proofId,
         workId,
+        version: 1,
         status: "pending_attestation",
         attestUrl: `${origin}/attest/${proofId}`,
         proofUrl: proofUrl(proofId, origin),

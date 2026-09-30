@@ -4,11 +4,17 @@ const dateTimeFormat = new Intl.DateTimeFormat("en-US", {
   timeStyle: "short",
   timeZone: "UTC",
 });
+const monthFormat = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 const numberFormat = new Intl.NumberFormat("en-US");
 
 /** "September 30, 2026". Dates are shown in UTC so every reader sees the same record. */
 export function formatDate(value: Date | string): string {
   return dateFormat.format(new Date(value));
+}
+
+/** "September 2026". */
+export function formatMonth(value: Date | string): string {
+  return monthFormat.format(new Date(value));
 }
 
 /** "September 30, 2026 at 4:42 PM UTC". */

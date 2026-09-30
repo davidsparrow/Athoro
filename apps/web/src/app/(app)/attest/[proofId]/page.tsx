@@ -28,7 +28,7 @@ export default async function AttestPage({ params }: PageProps<"/attest/[proofId
   const registration = await getOwnedRegistration(db, proofId, session.user.id);
   if (!registration) notFound();
 
-  const { record, version, work, evidence } = registration;
+  const { record, version, work, evidence, previous } = registration;
   const disclosure = evidence.find((item) => item.claimType === "creation-disclosure");
   const envelopes = evidence.filter((item) => item.claimType === "proof-envelope");
   const described = disclosure ? describeDisclosure(disclosure.payload as CreationDisclosure) : null;
@@ -53,17 +53,32 @@ export default async function AttestPage({ params }: PageProps<"/attest/[proofId
         Final step · Author attestation
       </p>
       <h1 className="mt-3 font-serif text-3xl tracking-tight">Confirm and register</h1>
+      {version.versionNumber > 1 ? (
+        <p className="mt-2 text-ink-muted">
+          Version {version.versionNumber} of &ldquo;{work.title}&rdquo;
+        </p>
+      ) : null}
       <p className="mt-3 leading-relaxed text-ink-muted">
         Check what will appear on the public record for <span className="font-mono text-ink">{proofId}</span>.
         Only you can complete this step; apps and AI agents can prepare a registration, but never attest for
         you.
       </p>
+      {previous ? (
+        <p className="mt-3 text-sm leading-relaxed text-ink-muted">
+          Version {previous.versionNumber} (
+          <Link href={`/p/${previous.proofId}`} className="font-mono underline underline-offset-4">
+            {previous.proofId}
+          </Link>
+          ) stays valid. Once you register, its record will note that a newer version exists.
+        </p>
+      ) : null}
 
       <div className="mt-10 space-y-6">
         <Card>
           <h2 className="font-medium">The work</h2>
           <Rows
             rows={[
+              ["Version", String(version.versionNumber)],
               ["Title", version.title],
               ["Byline", version.authorDisplayName],
               ["Type", WORK_TYPES[work.workType as WorkType] ?? work.workType],

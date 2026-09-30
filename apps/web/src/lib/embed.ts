@@ -2,6 +2,7 @@ import { proofUrl } from "./urls";
 
 export type MarkStyle = "badge" | "icon";
 export type MarkTheme = "light" | "dark";
+export type MarkStatus = "registered" | "withdrawn";
 
 export interface EmbedSnippet {
   id: "html" | "icon" | "markdown" | "wordpress" | "text";

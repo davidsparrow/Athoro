@@ -1,11 +1,13 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { GET as getMark } from "@/app/p/[proofId]/mark.svg/route";
 import { proofRecords, recordEvents, works } from "@/db/schema";
 import { getPublicProof } from "@/lib/proof";
 import { getAuthorPage, updateAuthorProfile } from "@/lib/profiles";
 import {
   discardPendingRegistration,
   finalizeRegistration,
+  getWorkForNewVersion,
   prepareVersion,
   withdrawRecord,
 } from "@/lib/registration";
@@ -89,6 +91,42 @@ describe.skipIf(!db)("versions, withdrawal and author pages", () => {
     expect((await newVersion(author, workId, "Revised again.")).versionNumber).toBe(2);
   });
 
+  it("loads an owned work's versions for the new-version form", async () => {
+    const author = await createAuthor(d);
+    const v1 = await registerWork(d, author, "First.");
+    const workId = await workIdOf(v1);
+
+    const ready = await getWorkForNewVersion(d, workId, author.userId);
+    expect(ready).toMatchObject({
+      work: { publicId: workId, workType: "essay" },
+      latest: { proofId: v1, versionNumber: 1, title: "The Future of Independent Software" },
+      draft: null,
+      nextVersionNumber: 2,
+    });
+
+    const draft = await newVersion(author, workId, "Second.");
+    const blocked = await getWorkForNewVersion(d, workId, author.userId);
+    expect(blocked?.latest?.proofId).toBe(v1);
+    expect(blocked?.draft).toMatchObject({ proofId: draft.proofId, versionNumber: 2 });
+    await expect(newVersion(author, workId, "Third.")).rejects.toMatchObject({
+      code: "draft-exists",
+      proofId: draft.proofId,
+    });
+    await expect(newVersion(author, workId, "First.")).rejects.toMatchObject({ code: "draft-exists" });
+
+    const other = await createAuthor(d, "other");
+    expect(await getWorkForNewVersion(d, workId, other.userId)).toBeNull();
+  });
+
+  it("names the identical version when content is unchanged", async () => {
+    const author = await createAuthor(d);
+    const v1 = await registerWork(d, author, "Same words.");
+    await expect(newVersion(author, await workIdOf(v1), "Same words.")).rejects.toMatchObject({
+      code: "unchanged",
+      proofId: v1,
+    });
+  });
+
   it("only lets the owner add versions", async () => {
     const author = await createAuthor(d);
     const workId = await workIdOf(await registerWork(d, author, "Mine."));
@@ -125,6 +163,20 @@ describe.skipIf(!db)("versions, withdrawal and author pages", () => {
     await expect(
       withdrawRecord(d, { proofId, userId: author.userId, reason: "other" }),
     ).rejects.toMatchObject({ code: "not-registered" });
+  });
+
+  it("serves a muted mark once a record is withdrawn", async () => {
+    const author = await createAuthor(d);
+    const proofId = await registerWork(d, author, "Marked.");
+    const mark = async () =>
+      (
+        await getMark(new Request(`https://authoro.test/p/${proofId}/mark.svg`), {
+          params: Promise.resolve({ proofId }),
+        })
+      ).text();
+    expect(await mark()).not.toContain("withdrawn");
+    await withdrawRecord(d, { proofId, userId: author.userId, reason: "author-request" });
+    expect(await mark()).toContain(">withdrawn</text>");
   });
 
   it("lists the latest public version of each work on the author page", async () => {

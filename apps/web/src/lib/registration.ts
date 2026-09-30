@@ -32,6 +32,8 @@ export class RegistrationError extends Error {
   constructor(
     readonly code: RegistrationErrorCode,
     message: string,
+    /** The record behind a conflict: the pending draft, or the identical version. */
+    readonly proofId?: string,
   ) {
     super(message);
     this.name = "RegistrationError";
@@ -211,6 +213,7 @@ export async function prepareVersion(
         throw new RegistrationError(
           "draft-exists",
           `Version ${draft.versionNumber} (${draft.proofId}) is waiting for attestation. Finish or discard it first.`,
+          draft.proofId,
         );
       }
       const identical = existing.find((version) => version.contentHash === registration.document.contentHash);
@@ -218,6 +221,7 @@ export async function prepareVersion(
         throw new RegistrationError(
           "unchanged",
           `This document is identical to version ${identical.versionNumber} (${identical.proofId}).`,
+          identical.proofId,
         );
       }
 
@@ -238,6 +242,46 @@ export async function prepareVersion(
   );
 }
 
+/**
+ * An owned work with its versions (newest first), for preparing the next one:
+ * the latest attested version to start from and any draft that blocks it.
+ * Null when the work doesn't exist or belongs to someone else.
+ */
+export async function getWorkForNewVersion(db: Database, workPublicId: string, userId: string) {
+  const [work] = await db
+    .select({ id: works.id, publicId: works.publicId, workType: works.workType, title: works.title })
+    .from(works)
+    .where(and(eq(works.publicId, workPublicId), eq(works.ownerId, userId)))
+    .limit(1);
+  if (!work) return null;
+
+  const versions = await db
+    .select({
+      versionNumber: workVersions.versionNumber,
+      title: workVersions.title,
+      canonicalUrl: workVersions.canonicalUrl,
+      description: workVersions.description,
+      contentHash: workVersions.contentHash,
+      textHash: workVersions.textHash,
+      proofId: proofRecords.publicId,
+      status: proofRecords.status,
+    })
+    .from(workVersions)
+    .innerJoin(proofRecords, eq(proofRecords.workVersionId, workVersions.id))
+    .where(eq(workVersions.workId, work.id))
+    .orderBy(desc(workVersions.versionNumber));
+
+  return {
+    work: { publicId: work.publicId, workType: work.workType as WorkType, title: work.title },
+    versions,
+    latest: versions.find((version) => version.status !== "pending_attestation") ?? null,
+    draft: versions.find((version) => version.status === "pending_attestation") ?? null,
+    nextVersionNumber: (versions[0]?.versionNumber ?? 0) + 1,
+  };
+}
+
+export type WorkForNewVersion = NonNullable<Awaited<ReturnType<typeof getWorkForNewVersion>>>;
+
 /** A registration owned by `userId`, with everything the attestation page shows. */
 export async function getOwnedRegistration(db: Database, proofId: string, userId: string) {
   const [row] = await db
@@ -248,12 +292,28 @@ export async function getOwnedRegistration(db: Database, proofId: string, userId
     .where(and(eq(proofRecords.publicId, proofId), eq(works.ownerId, userId)))
     .limit(1);
   if (!row) return null;
-  const evidence = await db
-    .select()
-    .from(attestations)
-    .where(eq(attestations.workVersionId, row.version.id))
-    .orderBy(attestations.createdAt);
-  return { ...row, evidence };
+  const [evidence, [previous]] = await Promise.all([
+    db
+      .select()
+      .from(attestations)
+      .where(eq(attestations.workVersionId, row.version.id))
+      .orderBy(attestations.createdAt),
+    // The earlier record that registering this version will annotate.
+    db
+      .select({ versionNumber: workVersions.versionNumber, proofId: proofRecords.publicId })
+      .from(workVersions)
+      .innerJoin(proofRecords, eq(proofRecords.workVersionId, workVersions.id))
+      .where(
+        and(
+          eq(workVersions.workId, row.work.id),
+          lt(workVersions.versionNumber, row.version.versionNumber),
+          ne(proofRecords.status, "pending_attestation"),
+        ),
+      )
+      .orderBy(desc(workVersions.versionNumber))
+      .limit(1),
+  ]);
+  return { ...row, evidence, previous: previous ?? null };
 }
 
 export type OwnedRegistration = NonNullable<Awaited<ReturnType<typeof getOwnedRegistration>>>;
@@ -467,6 +527,10 @@ export const WITHDRAWAL_REASONS = {
 } as const;
 
 export type WithdrawalReason = keyof typeof WITHDRAWAL_REASONS;
+
+export function isWithdrawalReason(value: unknown): value is WithdrawalReason {
+  return typeof value === "string" && Object.hasOwn(WITHDRAWAL_REASONS, value);
+}
 
 /**
  * Withdraws a registered record. Withdrawal is final and public: the record
