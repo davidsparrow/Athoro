@@ -1,8 +1,8 @@
 "use server";
 
 import { parseProofId } from "@authoro/core";
+import { refresh } from "next/cache";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { recordAudit } from "@/lib/audit";
 import { getProofStatus, incrementMetric } from "@/lib/proof";
@@ -50,5 +50,7 @@ export async function withdrawAction(
     metadata: { reason, note: Boolean(note.trim()) },
     headers: await headers(),
   });
-  redirect(`/p/${proofId}`);
+  // Re-render in place: a redirect to the same path is ignored when the URL has a #fragment (e.g. #embed).
+  refresh();
+  return {};
 }

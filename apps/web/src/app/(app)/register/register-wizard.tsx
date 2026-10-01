@@ -10,11 +10,20 @@ import {
   WORK_TYPES,
   type AiUse,
   type CreationMethod,
+  type DocumentationLink,
   type WorkType,
 } from "@authoro/core";
 import Link from "next/link";
-import { useState, useTransition, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import {
+  describeLinkError,
+  emptyLink,
+  LinksEditor,
+  linksFromDrafts,
+  type LinkDraft,
+} from "@/components/links-editor";
 import { Alert, Button, Field, inputClass } from "@/components/ui";
+import { MAX_ENVELOPES } from "@/lib/evidence-validation";
 import { formatBytes, formatDate, formatNumber } from "@/lib/format";
 import {
   MAX_DOCUMENT_BYTES,
@@ -52,6 +61,12 @@ export function RegisterWizard({ byline, newVersion }: { byline: string; newVers
   const [errors, setErrors] = useState<string[]>([]);
   const [conflict, setConflict] = useState<PrepareResult["conflict"]>();
   const [submitting, startSubmit] = useTransition();
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  // The "How it was made" step is long; bring errors into view when they appear.
+  useEffect(() => {
+    if (errors.length) errorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [errors]);
 
   const [work, setWork] = useState({
     title: newVersion?.initial.title ?? "",
@@ -70,8 +85,11 @@ export function RegisterWizard({ byline, newVersion }: { byline: string; newVers
   const [aiUses, setAiUses] = useState<AiUse[]>([]);
   const [aiTools, setAiTools] = useState("");
   const [note, setNote] = useState("");
-  const [envelopeJson, setEnvelopeJson] = useState("");
+  const [links, setLinks] = useState<LinkDraft[]>([]);
+  const [showLinks, setShowLinks] = useState(false);
+  const [envelopes, setEnvelopes] = useState<string[]>([""]);
   const [showEnvelope, setShowEnvelope] = useState(false);
+  const attachedEnvelopes = envelopes.filter((envelope) => envelope.trim());
 
   const usedAi = methods.some((method) => AI_METHODS.includes(method));
   const previousProofIds = new Set(newVersion?.previous.map((version) => version.proofId));
@@ -110,8 +128,9 @@ export function RegisterWizard({ byline, newVersion }: { byline: string; newVers
               .filter(Boolean)
           : [],
         note: note.trim() || undefined,
+        links: linksFromDrafts(links),
       },
-      envelopeJson: envelopeJson.trim() || undefined,
+      envelopesJson: attachedEnvelopes,
     };
   }
 
@@ -193,7 +212,9 @@ export function RegisterWizard({ byline, newVersion }: { byline: string; newVers
       if (validation && !validation.ok) {
         return setErrors(
           validation.errors.map((error) =>
-            error.replace(/^disclosure\.\w+: /, "").replace(/^envelopeJson: /, ""),
+            describeLinkError(error)
+              .replace(/^disclosure\.\w+: /, "")
+              .replace(/^envelopesJson: /, ""),
           ),
         );
       }
@@ -243,23 +264,25 @@ export function RegisterWizard({ byline, newVersion }: { byline: string; newVers
       <h2 className="font-serif text-2xl tracking-tight">{STEPS[step]}</h2>
 
       {errors.length ? (
-        <Alert tone="error">
-          <ul className="space-y-1">
-            {errors.map((error) => (
-              <li key={error}>{error}</li>
-            ))}
-          </ul>
-          {conflict ? (
-            <Link
-              href={
-                conflict.code === "draft-exists" ? `/attest/${conflict.proofId}` : `/p/${conflict.proofId}`
-              }
-              className="mt-2 inline-block font-medium underline underline-offset-4"
-            >
-              {conflict.code === "draft-exists" ? "Open the draft" : `View ${conflict.proofId}`}
-            </Link>
-          ) : null}
-        </Alert>
+        <div ref={errorRef}>
+          <Alert tone="error">
+            <ul className="space-y-1">
+              {errors.map((error) => (
+                <li key={error}>{error}</li>
+              ))}
+            </ul>
+            {conflict ? (
+              <Link
+                href={
+                  conflict.code === "draft-exists" ? `/attest/${conflict.proofId}` : `/p/${conflict.proofId}`
+                }
+                className="mt-2 inline-block font-medium underline underline-offset-4"
+              >
+                {conflict.code === "draft-exists" ? "Open the draft" : `View ${conflict.proofId}`}
+              </Link>
+            ) : null}
+          </Alert>
+        </div>
       ) : null}
 
       {step === 0 ? (
@@ -489,49 +512,63 @@ export function RegisterWizard({ byline, newVersion }: { byline: string; newVers
             />
           </Field>
 
-          <div className="rounded-xl border border-line">
-            <button
-              type="button"
-              onClick={() => setShowEnvelope(!showEnvelope)}
-              aria-expanded={showEnvelope}
-              className="flex w-full items-center justify-between px-5 py-4 text-left text-sm"
-            >
-              <span>
-                <span className="font-medium">Attach evidence from another tool</span>
-                <span className="block text-ink-muted">
-                  Optional. A Proof Envelope (<code className="font-mono text-xs">authoro-proof/1.0</code>)
-                  exported by a writing app or recorder.
-                </span>
-              </span>
-              <span aria-hidden>{showEnvelope ? "−" : "+"}</span>
-            </button>
-            {showEnvelope ? (
-              <div className="space-y-3 border-t border-line px-5 py-4">
-                <textarea
-                  aria-label="Proof Envelope JSON"
-                  rows={8}
-                  value={envelopeJson}
-                  onChange={(event) => setEnvelopeJson(event.target.value)}
-                  placeholder='{ "schema": "authoro-proof/1.0", "issuer": { … }, "work": { "hash": "sha256:…" }, "evidence": { … } }'
-                  className={`${inputClass} font-mono text-xs`}
-                />
-                <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink-muted hover:text-ink">
-                  <span className="underline underline-offset-4">Load from a .json file</span>
-                  <input
-                    type="file"
-                    accept=".json,application/json"
-                    className="sr-only"
-                    onChange={async (event) => setEnvelopeJson((await event.target.files?.[0]?.text()) ?? "")}
-                  />
-                </label>
-                <p className="text-xs text-ink-muted">
-                  Its <code className="font-mono">work.hash</code> must match your document. Signatures
-                  aren&apos;t verified yet, so it appears as evidence you submitted, attributed to the tool it
-                  names.
-                </p>
-              </div>
+          <Disclosure
+            open={showLinks}
+            onToggle={() => {
+              if (!showLinks && !links.length) setLinks([emptyLink()]);
+              setShowLinks(!showLinks);
+            }}
+            title="Link to your own documentation"
+            summary={
+              links.some((link) => link.url.trim())
+                ? `${linksFromDrafts(links).length} of up to 5 links added.`
+                : "Optional. A revision history, research notes or a write-up of your process, hosted wherever you keep it."
+            }
+          >
+            <LinksEditor links={links} onChange={setLinks} idPrefix="doc-link" />
+            <p className="text-xs text-ink-muted">
+              Only https:// links. They become part of your disclosure, so they can&apos;t be changed after
+              you register. Your record shows each one as &ldquo;Documentation hosted by&rdquo; its site.
+              Authoro doesn&apos;t fetch, store or check what&apos;s there.
+            </p>
+          </Disclosure>
+
+          <Disclosure
+            open={showEnvelope}
+            onToggle={() => setShowEnvelope(!showEnvelope)}
+            title="Attach evidence from other tools"
+            summary={
+              attachedEnvelopes.length
+                ? `${attachedEnvelopes.length} Proof ${attachedEnvelopes.length === 1 ? "Envelope" : "Envelopes"} attached.`
+                : "Optional. Proof Envelopes exported by writing apps, recorders, schools or publishers."
+            }
+          >
+            {envelopes.map((envelope, index) => (
+              <EnvelopeField
+                key={index}
+                index={index}
+                value={envelope}
+                onChange={(value) =>
+                  setEnvelopes(envelopes.map((current, i) => (i === index ? value : current)))
+                }
+                onRemove={
+                  envelopes.length > 1
+                    ? () => setEnvelopes(envelopes.filter((_, i) => i !== index))
+                    : undefined
+                }
+              />
+            ))}
+            {envelopes.length < MAX_ENVELOPES ? (
+              <Button variant="secondary" className="h-9" onClick={() => setEnvelopes([...envelopes, ""])}>
+                Attach another envelope
+              </Button>
             ) : null}
-          </div>
+            <p className="text-xs text-ink-muted">
+              Each envelope&apos;s <code className="font-mono">work.hash</code> must match your document.
+              Signatures aren&apos;t verified yet, so each appears as evidence you submitted, attributed to
+              the tool or organization it names.
+            </p>
+          </Disclosure>
         </div>
       ) : null}
 
@@ -545,7 +582,8 @@ export function RegisterWizard({ byline, newVersion }: { byline: string; newVers
           aiUses={usedAi ? aiUses : []}
           aiTools={usedAi ? aiTools : ""}
           note={note}
-          hasEnvelope={Boolean(envelopeJson.trim())}
+          links={linksFromDrafts(links)}
+          envelopes={attachedEnvelopes.length}
           matches={matches}
         />
       ) : null}
@@ -640,7 +678,8 @@ function Review(props: {
   aiUses: AiUse[];
   aiTools: string;
   note: string;
-  hasEnvelope: boolean;
+  links: DocumentationLink[];
+  envelopes: number;
   matches: FingerprintMatch[];
 }) {
   const rows: [string, ReactNode][] = [
@@ -655,7 +694,26 @@ function Review(props: {
   if (props.aiUses.length) rows.push(["AI helped with", props.aiUses.map((use) => AI_USES[use]).join(", ")]);
   if (props.aiTools.trim()) rows.push(["AI tools", props.aiTools]);
   if (props.note.trim()) rows.push(["Your note", props.note]);
-  if (props.hasEnvelope) rows.push(["Attached evidence", "Proof Envelope"]);
+  if (props.links.length) {
+    rows.push([
+      "Your documentation",
+      <ul key="links" className="space-y-1">
+        {props.links.map((link) => (
+          <li key={link.url}>
+            {link.label ? `${link.label}: ` : ""}
+            <span className="break-all text-ink-muted">{link.url}</span>
+            {link.reportHash ? <span className="text-ink-muted"> (with a report fingerprint)</span> : null}
+          </li>
+        ))}
+      </ul>,
+    ]);
+  }
+  if (props.envelopes) {
+    rows.push([
+      "Attached evidence",
+      props.envelopes === 1 ? "1 Proof Envelope" : `${props.envelopes} Proof Envelopes`,
+    ]);
+  }
 
   return (
     <div className="space-y-5">
@@ -671,6 +729,75 @@ function Review(props: {
       <p className="text-sm text-ink-muted">
         Next you&apos;ll confirm these details and attest to them. Nothing is public until you do.
       </p>
+    </div>
+  );
+}
+
+/** A collapsible optional section of the "How it was made" step. */
+function Disclosure(props: {
+  open: boolean;
+  onToggle: () => void;
+  title: string;
+  summary: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-line">
+      <button
+        type="button"
+        onClick={props.onToggle}
+        aria-expanded={props.open}
+        className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-sm"
+      >
+        <span>
+          <span className="font-medium">{props.title}</span>
+          <span className="block text-ink-muted">{props.summary}</span>
+        </span>
+        <span aria-hidden>{props.open ? "−" : "+"}</span>
+      </button>
+      {props.open ? <div className="space-y-3 border-t border-line px-5 py-4">{props.children}</div> : null}
+    </div>
+  );
+}
+
+function EnvelopeField(props: {
+  index: number;
+  value: string;
+  onChange: (value: string) => void;
+  onRemove?: () => void;
+}) {
+  const label = `Proof Envelope ${props.index + 1}`;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="font-medium">{label}</span>
+        {props.onRemove ? (
+          <button
+            type="button"
+            onClick={props.onRemove}
+            className="text-ink-muted underline-offset-4 hover:text-ink hover:underline"
+          >
+            Remove
+          </button>
+        ) : null}
+      </div>
+      <textarea
+        aria-label={`${label} JSON`}
+        rows={6}
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
+        placeholder='{ "schema": "authoro-proof/1.1", "issuer": { … }, "work": { "hash": "sha256:…" }, "evidence": { … } }'
+        className={`${inputClass} font-mono text-xs`}
+      />
+      <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink-muted hover:text-ink">
+        <span className="underline underline-offset-4">Load from a .json file</span>
+        <input
+          type="file"
+          accept=".json,application/json"
+          className="sr-only"
+          onChange={async (event) => props.onChange((await event.target.files?.[0]?.text()) ?? "")}
+        />
+      </label>
     </div>
   );
 }
