@@ -85,9 +85,10 @@ describe.skipIf(!db)("database integrity rules", () => {
   }
 
   async function register(recordId: string) {
+    const now = new Date();
     await d
       .update(proofRecords)
-      .set({ status: "registered", registeredAt: new Date() })
+      .set({ status: "registered", registeredAt: now, publishedAt: now })
       .where(eq(proofRecords.id, recordId));
   }
 
@@ -158,6 +159,133 @@ describe.skipIf(!db)("database integrity rules", () => {
     await d
       .update(proofRecords)
       .set({ status: "withdrawn", withdrawnAt: new Date(), withdrawnReason: "Author request" })
+      .where(eq(proofRecords.id, record.id));
+    await expectRejected(
+      d.update(proofRecords).set({ visibility: "public" }).where(eq(proofRecords.id, record.id)),
+      /withdrawn and final/,
+    );
+  });
+
+  it("keeps a published record's provenance when its visibility changes", async () => {
+    const { record } = await seedPendingRecord();
+    const events = async () =>
+      (
+        await d
+          .select({ type: recordEvents.eventType, data: recordEvents.data })
+          .from(recordEvents)
+          .where(eq(recordEvents.proofRecordId, record.id))
+          .orderBy(recordEvents.id)
+      ).map(({ type, data }) => ({ type, ...(data as Record<string, unknown>) }));
+
+    // Registering a public record publishes it.
+    await expectRejected(
+      d
+        .update(proofRecords)
+        .set({ status: "registered", registeredAt: new Date() })
+        .where(eq(proofRecords.id, record.id)),
+      /proof_records_published_when_visible/,
+    );
+    await register(record.id);
+    // Drafts and registration itself aren't logged here; the application writes `registered`.
+    expect(await events()).toEqual([]);
+
+    // Restricting keeps the publication time, which never changes.
+    await d.update(proofRecords).set({ visibility: "private" }).where(eq(proofRecords.id, record.id));
+    await expectRejected(
+      d.update(proofRecords).set({ publishedAt: null }).where(eq(proofRecords.id, record.id)),
+      /publication time cannot change/,
+    );
+    await expectRejected(
+      d.update(proofRecords).set({ publishedAt: new Date() }).where(eq(proofRecords.id, record.id)),
+      /publication time cannot change/,
+    );
+    // A published record can't be embargoed as if it had never been seen.
+    await expectRejected(
+      d
+        .update(proofRecords)
+        .set({ embargoUntil: new Date(Date.now() + 86_400_000) })
+        .where(eq(proofRecords.id, record.id)),
+      /proof_records_embargo_private/,
+    );
+    await d
+      .update(proofRecords)
+      .set({ visibility: "unlisted", evidenceDisclosure: "minimal" })
+      .where(eq(proofRecords.id, record.id));
+
+    expect(await events()).toEqual([
+      { type: "visibility-changed", from: "public", to: "private", firstPublished: false },
+      { type: "visibility-changed", from: "private", to: "unlisted", firstPublished: false },
+      { type: "evidence-disclosure-changed", from: "standard", to: "minimal" },
+    ]);
+  });
+
+  it("releases embargoes only from private records that were never published", async () => {
+    const { record } = await seedPendingRecord();
+    const registeredAt = new Date(Date.now() - 60_000);
+    const until = new Date(Date.now() + 86_400_000);
+    await d
+      .update(proofRecords)
+      .set({ status: "registered", registeredAt, visibility: "private", embargoUntil: until })
+      .where(eq(proofRecords.id, record.id));
+    await expectRejected(
+      d.update(proofRecords).set({ visibility: "unlisted" }).where(eq(proofRecords.id, record.id)),
+      /proof_records_embargo_private/,
+    );
+    // Publishing a record that stays private is refused.
+    await expectRejected(
+      d
+        .update(proofRecords)
+        .set({ embargoUntil: null, publishedAt: new Date() })
+        .where(eq(proofRecords.id, record.id)),
+      /stays private/,
+    );
+    await expectRejected(
+      d
+        .update(proofRecords)
+        .set({ visibility: "public", embargoUntil: null, publishedAt: new Date(registeredAt.getTime() - 1) })
+        .where(eq(proofRecords.id, record.id)),
+      /proof_records_published_after_registration/,
+    );
+    const later = new Date(until.getTime() + 86_400_000);
+    await d.update(proofRecords).set({ embargoUntil: later }).where(eq(proofRecords.id, record.id));
+    await d
+      .update(proofRecords)
+      .set({ visibility: "public", embargoUntil: null, publishedAt: later })
+      .where(eq(proofRecords.id, record.id));
+
+    const events = await d
+      .select({ type: recordEvents.eventType, data: recordEvents.data })
+      .from(recordEvents)
+      .where(eq(recordEvents.proofRecordId, record.id))
+      .orderBy(recordEvents.id);
+    expect(events.map((event) => event.type)).toEqual(["embargo-changed", "embargo-lifted"]);
+    expect(new Date((events[0]!.data as { from: string }).from)).toEqual(until);
+    expect(new Date((events[0]!.data as { to: string }).to)).toEqual(later);
+    expect(events[1]!.data).toMatchObject({ early: false, to: "public" });
+    expect(new Date((events[1]!.data as { scheduledFor: string }).scheduledFor)).toEqual(later);
+  });
+
+  it("cancels a scheduled release when a record is withdrawn", async () => {
+    const { record } = await seedPendingRecord();
+    await d
+      .update(proofRecords)
+      .set({
+        status: "registered",
+        registeredAt: new Date(),
+        visibility: "private",
+        embargoUntil: new Date(Date.now() + 86_400_000),
+      })
+      .where(eq(proofRecords.id, record.id));
+    await expectRejected(
+      d
+        .update(proofRecords)
+        .set({ status: "withdrawn", withdrawnAt: new Date() })
+        .where(eq(proofRecords.id, record.id)),
+      /proof_records_embargo_private/,
+    );
+    await d
+      .update(proofRecords)
+      .set({ status: "withdrawn", withdrawnAt: new Date(), embargoUntil: null })
       .where(eq(proofRecords.id, record.id));
     await expectRejected(
       d.update(proofRecords).set({ visibility: "public" }).where(eq(proofRecords.id, record.id)),

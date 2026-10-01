@@ -21,12 +21,27 @@ import {
   works,
   workVersions,
 } from "@/db/schema";
+import { getPlan } from "./entitlements";
 import { envelopeEvidence } from "./evidence";
 import type { AuthorProfile } from "./profiles";
 import type { ValidRegistration } from "./registration-validation";
+import {
+  accessChoiceProblem,
+  choiceNeedsPro,
+  embargoDue,
+  type AccessChoice,
+  type EvidencePreset,
+} from "./visibility";
 
 export type RegistrationErrorCode =
-  "not-found" | "not-pending" | "invalid-name" | "draft-exists" | "unchanged" | "not-registered";
+  | "not-found"
+  | "not-pending"
+  | "invalid-name"
+  | "invalid-access"
+  | "plan-required"
+  | "draft-exists"
+  | "unchanged"
+  | "not-registered";
 
 export class RegistrationError extends Error {
   constructor(
@@ -313,7 +328,9 @@ export type OwnedRegistration = NonNullable<Awaited<ReturnType<typeof getOwnedRe
 /**
  * The human step: records the author's attestation and registers the proof
  * record. Only the authenticated owner can do this; agents and integrations
- * can prepare a registration but never finalize it.
+ * can prepare a registration but never finalize it. The author also confirms
+ * who can see the record and how much evidence detail it shows; without
+ * `access` or `evidencePreset`, the prepared values stand.
  */
 export async function finalizeRegistration(
   db: Database,
@@ -321,8 +338,17 @@ export async function finalizeRegistration(
     proofId,
     userId,
     typedName,
+    access,
+    evidencePreset,
     now = new Date(),
-  }: { proofId: string; userId: string; typedName: string; now?: Date },
+  }: {
+    proofId: string;
+    userId: string;
+    typedName: string;
+    access?: AccessChoice;
+    evidencePreset?: EvidencePreset;
+    now?: Date;
+  },
 ): Promise<{ proofId: string; attestationHash: string }> {
   const name = normalizeTypedName(typedName);
   if (name.length < 2 || name.length > 200) {
@@ -342,6 +368,21 @@ export async function finalizeRegistration(
     if (row.record.status !== "pending_attestation") {
       throw new RegistrationError("not-pending", "This record has already been registered.");
     }
+
+    const choice: AccessChoice = access ?? {
+      visibility: row.record.visibility,
+      embargoUntil: row.record.embargoUntil,
+      embargoShowsFingerprint: row.record.embargoShowsFingerprint,
+    };
+    const problem = accessChoiceProblem(choice, { published: false, now });
+    if (problem) throw new RegistrationError("invalid-access", problem);
+    if (choiceNeedsPro(choice) && (await getPlan(db, userId)) !== "pro") {
+      throw new RegistrationError(
+        "plan-required",
+        "Private, unlisted and embargoed records are part of Authoro Pro. Choose Public to register for free.",
+      );
+    }
+    const preset = evidencePreset ?? row.record.evidenceDisclosure;
 
     const [disclosure] = await tx
       .select({ payloadHash: attestations.payloadHash })
@@ -378,13 +419,27 @@ export async function finalizeRegistration(
     });
     await tx
       .update(proofRecords)
-      .set({ status: "registered", registeredAt: now })
+      .set({
+        status: "registered",
+        registeredAt: now,
+        visibility: choice.visibility,
+        embargoUntil: choice.embargoUntil,
+        embargoShowsFingerprint: choice.embargoUntil ? choice.embargoShowsFingerprint : false,
+        evidenceDisclosure: preset,
+        publishedAt: choice.visibility === "private" ? null : now,
+      })
       .where(eq(proofRecords.id, row.record.id));
     await tx.insert(recordEvents).values({
       proofRecordId: row.record.id,
       eventType: "registered",
       actorUserId: userId,
-      data: { attestationHash, statementVersion: attestation.statementVersion },
+      data: {
+        attestationHash,
+        statementVersion: attestation.statementVersion,
+        visibility: choice.visibility,
+        embargoUntil: choice.embargoUntil?.toISOString() ?? null,
+        evidenceDisclosure: preset,
+      },
       createdAt: now,
     });
 
@@ -558,11 +613,21 @@ export async function withdrawRecord(
           : "Only registered records can be withdrawn.",
       );
     }
+    // A record whose embargo has lifted is already public; record that before withdrawing it.
+    if (embargoDue(row.record, now)) {
+      await tx
+        .update(proofRecords)
+        .set({ visibility: "public", publishedAt: row.record.embargoUntil, embargoUntil: null })
+        .where(eq(proofRecords.id, row.record.id));
+    }
     await tx
       .update(proofRecords)
       .set({
         status: "withdrawn",
         withdrawnAt: now,
+        // Withdrawal is final, so a scheduled release is cancelled.
+        embargoUntil: null,
+        embargoShowsFingerprint: false,
         withdrawnReason: cleanNote
           ? `${WITHDRAWAL_REASONS[reason]}: ${cleanNote}`
           : WITHDRAWAL_REASONS[reason],
