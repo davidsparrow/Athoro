@@ -4,5 +4,6 @@ export * from "./verify";
 export * from "./canonical-json";
 export * from "./evidence";
 export * from "./envelope";
+export * from "./links";
 export * from "./attestation";
 export * from "./work-types";

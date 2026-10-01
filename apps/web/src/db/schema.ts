@@ -3,7 +3,8 @@
  *
  * Integrity rules enforced in the database (see the `immutability` migration):
  * - A work version is immutable once its proof record leaves `pending_attestation`.
- * - Attestation payloads never change; only their status (revoked/disputed) can.
+ * - Attestation payloads never change; only their status can, and only forward
+ *   (evidence awaiting the author's approval is approved or declined, once).
  * - Author attestations, record events and audit events are append-only.
  * Corrections and revocations are recorded as new events, never as overwrites.
  */
@@ -52,7 +53,24 @@ export const evidenceClass = pgEnum("evidence_class", [
   "self",
 ]);
 export const signatureStatus = pgEnum("signature_status", ["unsigned", "valid", "invalid", "unverifiable"]);
-export const attestationStatus = pgEnum("attestation_status", ["active", "revoked", "disputed"]);
+/**
+ * `pending_approval`: submitted by an integration after registration and not
+ * public until the author approves it (`active`) or declines it (`declined`,
+ * final and never public).
+ */
+export const attestationStatus = pgEnum("attestation_status", [
+  "active",
+  "revoked",
+  "disputed",
+  "pending_approval",
+  "declined",
+]);
+/**
+ * How evidence reached a version: with the registration the author attested
+ * to, added later by the author, or added later through an API key (which
+ * waits for the author's approval).
+ */
+export const evidenceChannel = pgEnum("evidence_channel", ["registration", "author", "api"]);
 export const issuerKind = pgEnum("issuer_kind", [
   "authoro",
   "platform",
@@ -212,7 +230,10 @@ export const attestations = pgTable(
     signature: text(),
     signatureStatus: signatureStatus().default("unsigned").notNull(),
     status: attestationStatus().default("active").notNull(),
+    addedVia: evidenceChannel().default("registration").notNull(),
     createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    /** When the author approved or declined evidence that waited for approval. */
+    reviewedAt: timestamp({ withTimezone: true }),
     revokedAt: timestamp({ withTimezone: true }),
     revokedByUserId: text().references(() => user.id, { onDelete: "set null" }),
     revocationReason: text(),

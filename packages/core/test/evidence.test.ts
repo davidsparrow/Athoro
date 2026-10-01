@@ -16,6 +16,19 @@ describe("creationDisclosureSchema", () => {
     const result = creationDisclosureSchema.parse({ methods: ["manual"] });
     expect(result.aiUses).toEqual([]);
     expect(result.aiTools).toEqual([]);
+    expect(result.links).toEqual([]);
+  });
+
+  it("accepts links to the author's own documentation", () => {
+    const result = creationDisclosureSchema.safeParse({
+      methods: ["manual"],
+      links: [{ url: "https://jane.example/process", label: "Drafts and notes" }],
+    });
+    expect(result.success).toBe(true);
+    expect(
+      creationDisclosureSchema.safeParse({ methods: ["manual"], links: [{ url: "ftp://jane.example/" }] })
+        .success,
+    ).toBe(false);
   });
 
   it("rejects contradictory or empty disclosures", () => {

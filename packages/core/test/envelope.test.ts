@@ -48,6 +48,33 @@ describe("parseProofEnvelope", () => {
     }
   });
 
+  it("accepts authoro-proof/1.1 with links to the provider's documentation", () => {
+    const result = parseProofEnvelope({
+      ...valid,
+      schema: "authoro-proof/1.1",
+      links: [{ url: "https://writermark.example/r/1", label: "Session report", reportHash: hash }],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.envelope.links?.[0]?.label).toBe("Session report");
+  });
+
+  it("keeps 1.0 envelopes unchanged and refuses links on them", () => {
+    const result = parseProofEnvelope(valid);
+    expect(result.ok && "links" in result.envelope).toBe(false);
+    const withLinks = parseProofEnvelope({ ...valid, links: [{ url: "https://writermark.example/r/1" }] });
+    expect(withLinks).toEqual({ ok: false, errors: ["links: Links need schema authoro-proof/1.1."] });
+  });
+
+  it("validates links", () => {
+    const result = parseProofEnvelope({
+      ...valid,
+      schema: "authoro-proof/1.1",
+      links: [{ url: "http://writermark.example/r/1" }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors[0]).toMatch(/^links\.0\.url: /);
+  });
+
   it("rejects invalid JSON, wrong schema versions and oversized input", () => {
     expect(parseProofEnvelope("{nope").ok).toBe(false);
     expect(parseProofEnvelope({ ...valid, schema: "authoro-proof/9.9" }).ok).toBe(false);
