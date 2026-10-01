@@ -68,7 +68,16 @@ export interface ReleasedRecord {
  */
 export async function releaseDueEmbargoes(
   db: Database,
-  { now = new Date(), proofRecordId }: { now?: Date; proofRecordId?: string } = {},
+  {
+    now = new Date(),
+    proofRecordId,
+    workId,
+  }: {
+    now?: Date;
+    proofRecordId?: string;
+    /** Only the versions of this work (its internal ID). */
+    workId?: string;
+  } = {},
 ): Promise<ReleasedRecord[]> {
   const released = await db
     .update(proofRecords)
@@ -79,6 +88,12 @@ export async function releaseDueEmbargoes(
         eq(proofRecords.visibility, "private"),
         lte(proofRecords.embargoUntil, now),
         proofRecordId ? eq(proofRecords.id, proofRecordId) : undefined,
+        workId
+          ? inArray(
+              proofRecords.workVersionId,
+              db.select({ id: workVersions.id }).from(workVersions).where(eq(workVersions.workId, workId)),
+            )
+          : undefined,
       ),
     )
     .returning({

@@ -36,7 +36,8 @@ function groupByWork(rows: WorkRow[]) {
 function visibilityNote(row: WorkRow): string | null {
   switch (publicAccess(row)) {
     case "embargoed":
-      return `Embargoed until ${formatDateTime(row.embargoUntil!)}`;
+      // A passed release time is public already; the record says so as soon as it's read.
+      return row.embargoUntil! > new Date() ? `Embargoed until ${formatDateTime(row.embargoUntil!)}` : null;
     case "restricted":
       return "Restricted";
     case "private":

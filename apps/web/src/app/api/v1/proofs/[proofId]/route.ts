@@ -23,7 +23,7 @@ export async function GET(request: Request, { params }: RouteContext<"/api/v1/pr
         headers: { ...headers, "Cache-Control": "public, max-age=60", "X-Robots-Tag": "noindex" },
       });
     }
-    if (proof.released) notifyEmbargoLifted(proof.released);
+    proof.released.forEach(notifyEmbargoLifted);
     return json(await serializePublicProof(proof, appOrigin()), {
       headers: {
         ...headers,

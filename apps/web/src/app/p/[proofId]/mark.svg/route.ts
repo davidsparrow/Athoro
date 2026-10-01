@@ -21,7 +21,7 @@ export async function GET(request: Request, { params }: RouteContext<"/p/[proofI
   if (!proofId || !record || record.status === "pending_attestation") {
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "public, max-age=60" } });
   }
-  if (record.released) notifyEmbargoLifted(record.released);
+  record.released.forEach(notifyEmbargoLifted);
 
   const search = new URL(request.url).searchParams;
   const style: MarkStyle = search.get("style") === "icon" ? "icon" : "badge";

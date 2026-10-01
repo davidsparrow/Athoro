@@ -17,9 +17,22 @@ import { embargoDue, publicAccess, releaseDueEmbargoes, type ReleasedRecord } fr
 /** Record events a visitor sees while an embargo holds: when it was registered and its schedule. */
 const EMBARGO_EVENTS = new Set(["registered", "embargo-changed"]);
 
-function loadRecordRow(db: Database, proofId: string) {
+function loadRecordRow(db: Database, proofId: string, now: Date) {
   return db
-    .select({ record: proofRecords, version: workVersions, work: works, profile: authorProfiles })
+    .select({
+      record: proofRecords,
+      version: workVersions,
+      work: works,
+      profile: authorProfiles,
+      // Another version of the work whose embargo has passed, so this page lists it correctly.
+      dueSibling: sql<boolean>`exists (
+        select 1 from ${proofRecords} as sibling
+        join ${workVersions} as sibling_version on sibling_version.id = sibling.work_version_id
+        where sibling_version.work_id = ${works.id}
+          and sibling.status = 'registered' and sibling.visibility = 'private'
+          and sibling.embargo_until <= ${now.toISOString()}::timestamptz
+      )`,
+    })
     .from(proofRecords)
     .innerJoin(workVersions, eq(workVersions.id, proofRecords.workVersionId))
     .innerJoin(works, eq(works.id, workVersions.workId))
@@ -44,8 +57,9 @@ function loadEvents(db: Database, proofRecordId: string) {
  * Everything the public proof page shows for one record. Returns null for
  * unknown IDs and for records that were never attested. A visitor to a
  * private record gets a sealed view instead: an embargo notice, a restricted
- * record's surviving provenance, or only that the record exists. An embargo
- * whose time has come is released here, and `released` says so once.
+ * record's surviving provenance, or only that the record exists. Embargoes on
+ * the work's versions whose time has come are released here, and `released`
+ * lists them once.
  */
 export async function getPublicProof(
   db: Database,
@@ -53,16 +67,16 @@ export async function getPublicProof(
   viewerId?: string | null,
   now = new Date(),
 ) {
-  let [row] = await loadRecordRow(db, proofId);
+  let [row] = await loadRecordRow(db, proofId, now);
   if (!row) return null;
   const isOwner = Boolean(viewerId) && row.work.ownerId === viewerId;
   if (row.record.status === "pending_attestation")
     return isOwner ? { kind: "pending" as const, proofId } : null;
 
-  let released: ReleasedRecord | null = null;
-  if (embargoDue(row.record, now)) {
-    [released = null] = await releaseDueEmbargoes(db, { now, proofRecordId: row.record.id });
-    [row] = await loadRecordRow(db, proofId);
+  let released: ReleasedRecord[] = [];
+  if (row.dueSibling) {
+    released = await releaseDueEmbargoes(db, { now, workId: row.work.id });
+    [row] = await loadRecordRow(db, proofId, now);
     if (!row) return null;
   }
   const access = publicAccess(row.record);
@@ -254,9 +268,9 @@ export async function getProofStatus(db: Database, proofId: string, now = new Da
       .limit(1);
   let [row] = await select();
   if (!row) return null;
-  let released: ReleasedRecord | null = null;
+  let released: ReleasedRecord[] = [];
   if (embargoDue(row, now)) {
-    [released = null] = await releaseDueEmbargoes(db, { now, proofRecordId: row.id });
+    released = await releaseDueEmbargoes(db, { now, proofRecordId: row.id });
     [row] = await select();
     if (!row) return null;
   }

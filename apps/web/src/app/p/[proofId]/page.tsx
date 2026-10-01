@@ -97,8 +97,8 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
       if (ref === "mark") await incrementMetric(db, proof.record.id, "markClicks").catch(() => {});
     });
   }
-  // This view released an embargo whose time had come; tell the author once.
-  if (proof.released) notifyEmbargoLifted(proof.released);
+  // This view released embargoes whose time had come; tell the author once.
+  proof.released.forEach(notifyEmbargoLifted);
 
   const { record, version, work, author, evidence, authorAttestation, versions, pendingEvidence } = proof;
   // What the author attested to, and what was added to the record afterwards.

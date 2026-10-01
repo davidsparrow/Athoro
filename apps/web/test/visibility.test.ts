@@ -182,7 +182,7 @@ describe.skipIf(!db)("record visibility", () => {
     expect(await getPublicProof(d, shown)).toMatchObject({
       sealed: { fingerprint: { versionNumber: 1, contentHash: expect.stringMatching(/^sha256:/) } },
     });
-    expect(await getProofStatus(d, shown)).toMatchObject({ access: "embargoed", released: null });
+    expect(await getProofStatus(d, shown)).toMatchObject({ access: "embargoed", released: [] });
   });
 
   it("releases a due embargo on the next read, as of its scheduled time", async () => {
@@ -194,7 +194,7 @@ describe.skipIf(!db)("record visibility", () => {
     expect(proof).toMatchObject({
       kind: "record",
       access: "full",
-      released: { proofId, scheduledFor: until, owner: { email: `${author.userId}@example.com` } },
+      released: [{ proofId, scheduledFor: until, owner: { email: `${author.userId}@example.com` } }],
     });
     expect(await record(proofId)).toMatchObject({
       visibility: "public",
@@ -202,7 +202,7 @@ describe.skipIf(!db)("record visibility", () => {
       embargoUntil: null,
     });
     // Released once: the next read finds nothing to release.
-    expect(await getPublicProof(d, proofId, null, later)).toMatchObject({ released: null });
+    expect(await getPublicProof(d, proofId, null, later)).toMatchObject({ released: [] });
     expect(await events(proofId)).toMatchObject([
       { type: "registered" },
       { type: "embargo-lifted", early: false, to: "public", actor: null },
@@ -378,5 +378,26 @@ describe.skipIf(!db)("record visibility", () => {
     expect(await listed(v1)).toEqual([v1]);
     expect(await listed(v2)).toEqual([v1, v2]);
     expect(await listed(v1, author.userId)).toEqual([v1, v2]);
+
+    // A later version under embargo appears on the earlier one's record once its time comes.
+    const until = new Date(Date.now() + HOUR);
+    await d.update(proofRecords).set({ visibility: "public" }).where(eq(proofRecords.publicId, v2));
+    const { proofId: v3 } = await prepareVersion(d, {
+      userId: author.userId,
+      profile: author.profile,
+      workPublicId: workId,
+      registration: valid(await sampleInput("The third version.")),
+    });
+    await finalizeRegistration(d, {
+      proofId: v3,
+      userId: author.userId,
+      typedName: "Jane Smith",
+      access: embargo(until),
+    });
+    expect(await listed(v1)).toEqual([v1, v2]);
+    const later = await getPublicProof(d, v1, null, new Date(until.getTime() + 1000));
+    if (later?.kind !== "record") throw new Error("expected a record");
+    expect(later.versions.map((version) => version.proofId)).toEqual([v1, v2, v3]);
+    expect(later.released.map((item) => item.proofId)).toEqual([v3]);
   });
 });
