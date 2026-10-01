@@ -1,8 +1,10 @@
 import { parseProofId, WORK_TYPES, type WorkType } from "@authoro/core";
+import { eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Alert, Card, buttonClass } from "@/components/ui";
 import { db } from "@/db";
+import { passkey } from "@/db/schema";
 import { formatDate, formatNumber } from "@/lib/format";
 import { getMetricTotals, type MetricTotals } from "@/lib/proof";
 import { listWorksForUser } from "@/lib/registration";
@@ -49,6 +51,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     rows.map((row) => row.recordId),
   );
   const registeredVersion = rows.find((row) => row.proofId === justRegistered)?.versionNumber ?? 1;
+  const unprotected =
+    !session.user.twoFactorEnabled && (await db.$count(passkey, eq(passkey.userId, session.user.id))) === 0;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-12 sm:px-6">
@@ -66,6 +70,21 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           </Link>
         </div>
       </div>
+
+      {unprotected ? (
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-paper-sunken px-5 py-4 text-sm">
+          <p className="max-w-2xl">
+            <span className="font-medium">Protect the account that attests to your work.</span>{" "}
+            <span className="text-ink-muted">
+              Add a passkey or turn on two-step verification, so a stolen password or inbox isn&apos;t enough
+              to register work in your name.
+            </span>
+          </p>
+          <Link href="/settings#security" className={buttonClass("secondary", "h-9")}>
+            Set it up
+          </Link>
+        </div>
+      ) : null}
 
       {justRegistered ? (
         <div className="mt-8">

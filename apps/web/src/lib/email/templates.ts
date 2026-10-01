@@ -71,3 +71,52 @@ export function resetPasswordEmail(to: string, name: string | null | undefined, 
     html: layout({ heading: "Reset your password", intro, action: "Choose a new password", url, outro }),
   };
 }
+
+const SECURITY_NOTICES = {
+  "passkey-added": {
+    subject: "A passkey was added to your Authoro account",
+    intro: "A new passkey can now sign in to your Authoro account.",
+  },
+  "passkey-removed": {
+    subject: "A passkey was removed from your Authoro account",
+    intro: "A passkey was removed from your Authoro account and can no longer sign in.",
+  },
+  "two-factor-enabled": {
+    subject: "Two-step verification is on for your Authoro account",
+    intro:
+      "Signing in with your password or an email link now also needs a code from your authenticator app.",
+  },
+  "two-factor-disabled": {
+    subject: "Two-step verification is off for your Authoro account",
+    intro:
+      "Signing in with your password or an email link no longer needs a code from your authenticator app.",
+  },
+  "backup-codes-regenerated": {
+    subject: "New backup codes for your Authoro account",
+    intro: "New backup codes were created for your account. Your old backup codes no longer work.",
+  },
+  "backup-code-used": {
+    subject: "A backup code was used to sign in to Authoro",
+    intro: "Someone signed in to your Authoro account with one of your backup codes. Each code works once.",
+  },
+} as const;
+
+export type SecurityNotice = keyof typeof SECURITY_NOTICES;
+
+/** Tells the account holder about a change to how their account signs in. */
+export function securityNoticeEmail(
+  to: string,
+  name: string | null | undefined,
+  notice: SecurityNotice,
+  settingsUrl: string,
+): EmailMessage {
+  const { subject, intro } = SECURITY_NOTICES[notice];
+  const outro =
+    "If this wasn't you, reset your password, then review your passkeys and two-step verification in Settings.";
+  return {
+    to,
+    subject,
+    text: `${greeting(name)}\n\n${intro}\n\n${settingsUrl}\n\n${outro}`,
+    html: layout({ heading: subject, intro, action: "Review sign-in security", url: settingsUrl, outro }),
+  };
+}

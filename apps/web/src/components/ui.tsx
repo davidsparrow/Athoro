@@ -75,8 +75,18 @@ export function Alert({ tone = "info", children }: { tone?: keyof typeof ALERT_T
   );
 }
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+export function Card({
+  children,
+  className = "",
+  id,
+}: {
+  children: ReactNode;
+  className?: string;
+  id?: string;
+}) {
   return (
-    <section className={`rounded-xl border border-line bg-paper-raised p-6 ${className}`}>{children}</section>
+    <section id={id} className={`scroll-mt-8 rounded-xl border border-line bg-paper-raised p-6 ${className}`}>
+      {children}
+    </section>
   );
 }

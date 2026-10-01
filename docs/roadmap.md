@@ -13,9 +13,13 @@ V0 proves one loop: **creator registers → Authoro creates a proof → creator 
 
 **V0 is complete.**
 
-## Next (priorities to confirm)
+## After V0
 
-Security hardening (passkeys and TOTP MFA, a PRD requirement) · V0.5 Pro · V1 signed Proof Envelopes · V1.25 Identity Verified · V2 Authoro MCP and Claude plugin.
+- [x] **Chunk 7: Sign-in security.** Passkeys: add, rename and remove them in Settings, and sign in with one (from the email field's autofill or a button) without a code. Two-step verification with an authenticator app: a QR code to set up, ten readable backup codes, and a code step after a password _or_ an email link. Changing sign-in security needs a sign-in from the last hour, checked by the auth layer itself. Every change is audited and emailed to the account holder. Both are optional, and the dashboard nudges accounts that have neither.
+
+- [ ] **Chunk 8: Documentation links and multi-source provenance** (decision 022). Authors, in their creation disclosure ("Author supplied"), and platforms or schools, in their Proof Envelope ("Reported by X"), can link to their own documentation or audit trail for a work. Links are https only and part of the hashed or signed evidence, so they can't be swapped later. A link may carry the SHA-256 of an exported report so readers can check a copy. Authoro never fetches or stores the documentation, and shows it as "Documentation hosted by X ↗", not as a finding of its own. A version can carry several envelopes (UI and API). Evidence can be appended to a registered version later, with its own date and source, without changing the author's attestation; evidence a platform adds waits for the author's approval. The record page gains a provenance history across versions (for example v1 reported by Platform A, v2 author supplied, v3 reported by Platform B) with each source's link, and `GET /api/v1/proofs/{id}` returns the same. Schema versions: `authoro-proof/1.1` and `authoro-creation-disclosure/1.1` add `links`; 1.0 stays valid.
+
+Then, in the order to be confirmed: V0.5 Pro · V1 issuer accounts and signed Proof Envelopes (platforms and schools submit directly; the author still attests), including attestations signed with a passkey · V1.25 Identity Verified · V2 Authoro MCP and Claude plugin.
 
 ## Later (from the PRD)
 
