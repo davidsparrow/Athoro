@@ -10,10 +10,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
+import { DocumentationLinks } from "@/components/documentation-links";
 import { Alert, Card, buttonClass } from "@/components/ui";
 import { db } from "@/db";
 import { describeDisclosure } from "@/lib/disclosure";
 import { formatBytes, formatDate, formatNumber } from "@/lib/format";
+import { shownLinks } from "@/lib/provenance";
 import { getOwnedRegistration } from "@/lib/registration";
 import { requireAuthor } from "@/lib/session";
 import { AttestForm } from "./attest-form";
@@ -128,6 +130,10 @@ export default async function AttestPage({ params }: PageProps<"/attest/[proofId
                 ["Note", described.note],
               ]}
             />
+            <DocumentationLinks
+              links={shownLinks(disclosure?.payload)}
+              supplier={version.authorDisplayName}
+            />
           </Card>
         ) : null}
 
@@ -148,6 +154,7 @@ export default async function AttestPage({ params }: PageProps<"/attest/[proofId
                   ["Signature", item.signatureStatus === "unsigned" ? "None" : "Present, not yet verifiable"],
                 ]}
               />
+              <DocumentationLinks links={shownLinks(envelope)} supplier={envelope.issuer.name} />
             </Card>
           );
         })}

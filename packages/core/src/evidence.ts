@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { documentationLinksSchema } from "./links";
 
 /** Evidence classes, ordered from independently observed to self-reported. */
 export const EVIDENCE_CLASSES = {
@@ -130,6 +131,12 @@ export const aiUseSchema = z.enum(Object.keys(AI_USES) as [AiUse, ...AiUse[]]);
 
 const AI_METHODS: readonly CreationMethod[] = ["ai-assisted", "ai-generated-sections"];
 
+/**
+ * The current creation disclosure schema. 1.1 adds `links` to the author's own
+ * documentation; disclosures stored as 1.0 stay valid.
+ */
+export const CREATION_DISCLOSURE_SCHEMA = "authoro-creation-disclosure/1.1";
+
 /** The creator's self-attestation about how the work was made. Displayed as "Author supplied". */
 export const creationDisclosureSchema = z
   .object({
@@ -140,6 +147,8 @@ export const creationDisclosureSchema = z
     aiUses: z.array(aiUseSchema).max(Object.keys(AI_USES).length).default([]),
     aiTools: z.array(z.string().trim().min(1).max(80)).max(10).default([]),
     note: z.string().trim().max(2000).optional(),
+    /** The author's own documentation of how the work was made (1.1). */
+    links: documentationLinksSchema.default([]),
   })
   .superRefine((disclosure, ctx) => {
     if (new Set(disclosure.methods).size !== disclosure.methods.length) {

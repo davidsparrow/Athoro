@@ -1,10 +1,11 @@
-import { parseProofId, WORK_TYPES, type WorkType } from "@authoro/core";
+import { parseProofId, WORK_TYPES, type ProofEnvelope, type WorkType } from "@authoro/core";
 import { eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Alert, Card, buttonClass } from "@/components/ui";
 import { db } from "@/db";
 import { passkey } from "@/db/schema";
+import { listPendingEvidence } from "@/lib/evidence";
 import { formatDate, formatNumber } from "@/lib/format";
 import { getMetricTotals, type MetricTotals } from "@/lib/proof";
 import { listWorksForUser } from "@/lib/registration";
@@ -51,6 +52,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     rows.map((row) => row.recordId),
   );
   const registeredVersion = rows.find((row) => row.proofId === justRegistered)?.versionNumber ?? 1;
+  const pendingEvidence = await listPendingEvidence(db, session.user.id);
   const unprotected =
     !session.user.twoFactorEnabled && (await db.$count(passkey, eq(passkey.userId, session.user.id))) === 0;
 
@@ -83,6 +85,44 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           <Link href="/settings#security" className={buttonClass("secondary", "h-9")}>
             Set it up
           </Link>
+        </div>
+      ) : null}
+
+      {pendingEvidence.length ? (
+        <div className="mt-8 rounded-xl border border-accent/40 bg-paper-raised px-5 py-4 text-sm">
+          <p className="font-medium">
+            {pendingEvidence.length === 1
+              ? "Evidence is waiting for your approval"
+              : `${pendingEvidence.length} submissions are waiting for your approval`}
+          </p>
+          <p className="mt-0.5 text-ink-muted">
+            Sent with your API keys. Nothing appears on your records until you approve it.
+          </p>
+          <ul className="mt-3 space-y-1.5">
+            {pendingEvidence.slice(0, 5).map((item) => (
+              <li key={item.evidenceId} className="flex flex-wrap items-baseline gap-x-2">
+                <Link
+                  href={`/p/${item.proofId}#review`}
+                  className="font-medium underline-offset-4 hover:underline"
+                >
+                  {item.title}
+                  {item.versionNumber > 1 ? `, version ${item.versionNumber}` : ""}
+                </Link>
+                <span className="text-ink-muted">
+                  {item.claimType === "proof-envelope"
+                    ? `Proof Envelope from ${(item.payload as ProofEnvelope).issuer.name}`
+                    : "Links to documentation"}{" "}
+                  · sent {formatDate(item.submittedAt)} ·{" "}
+                  <Link href={`/p/${item.proofId}#review`} className="text-ink underline underline-offset-4">
+                    Review
+                  </Link>
+                </span>
+              </li>
+            ))}
+          </ul>
+          {pendingEvidence.length > 5 ? (
+            <p className="mt-2 text-ink-muted">And {pendingEvidence.length - 5} more on the same records.</p>
+          ) : null}
         </div>
       ) : null}
 

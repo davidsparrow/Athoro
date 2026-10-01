@@ -27,7 +27,8 @@ describe("validateRegistration", () => {
   it("accepts a complete registration and normalizes empty fields", async () => {
     const data = valid(await sampleInput());
     expect(data.work.canonicalUrl).toBeNull();
-    expect(data.envelope).toBeNull();
+    expect(data.envelopes).toEqual([]);
+    expect(data.disclosure.links).toEqual([]);
   });
 
   it("rejects bad hashes and unknown work types", async () => {
@@ -52,14 +53,62 @@ describe("validateRegistration", () => {
       work: { hash: input.document.textHash },
       evidence: { class: "continuous-observed", method: "continuous-composition", sessions: 6 },
     };
-    expect(valid({ ...input, envelopeJson: JSON.stringify(envelope) }).envelope?.issuer.name).toBe(
+    expect(valid({ ...input, envelopesJson: [JSON.stringify(envelope)] }).envelopes[0]?.issuer.name).toBe(
       "Writermark",
     );
     const other = { ...envelope, work: { hash: `sha256:${"f".repeat(64)}` } };
-    const result = validateRegistration({ ...input, envelopeJson: JSON.stringify(other) });
+    const result = validateRegistration({ ...input, envelopesJson: [JSON.stringify(other)] });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors[0]).toContain("different document");
-    expect(validateRegistration({ ...input, envelopeJson: "{nope" }).ok).toBe(false);
+    if (!result.ok)
+      expect(result.errors).toEqual([
+        "Evidence envelope: it describes a different document (its work.hash doesn't match yours).",
+      ]);
+    expect(validateRegistration({ ...input, envelopesJson: ["{nope"] }).ok).toBe(false);
+  });
+
+  it("takes several envelopes, naming the one that fails, and ignores blank ones", async () => {
+    const input = await sampleInput();
+    const envelope = (name: string) => ({
+      schema: "authoro-proof/1.1",
+      issuer: { id: `issuer:${name.toLowerCase()}`, name },
+      work: { hash: input.document.contentHash },
+      evidence: { method: "revision-history" },
+      links: [{ url: `https://${name.toLowerCase()}.example/r/1`, label: "Revision history" }],
+    });
+    const data = valid({
+      ...input,
+      envelopesJson: [JSON.stringify(envelope("Writermark")), "  ", JSON.stringify(envelope("School"))],
+    });
+    expect(data.envelopes.map((e) => e.issuer.name)).toEqual(["Writermark", "School"]);
+    expect(data.envelopes[0]?.links?.[0]?.url).toBe("https://writermark.example/r/1");
+
+    const failing = validateRegistration({
+      ...input,
+      envelopesJson: [
+        JSON.stringify(envelope("Writermark")),
+        JSON.stringify({ ...envelope("School"), links: [{ url: "http://school.example/" }] }),
+        JSON.stringify(envelope("Writermark")),
+      ],
+    });
+    expect(failing.ok).toBe(false);
+    if (!failing.ok) {
+      expect(failing.errors[0]).toMatch(/^Evidence envelope 2: links\.0\.url: /);
+      expect(failing.errors[1]).toBe("Evidence envelope 3: it's the same as an earlier envelope.");
+    }
+    const tooMany = validateRegistration({ ...input, envelopesJson: Array(6).fill("{}") });
+    expect(tooMany.ok).toBe(false);
+  });
+
+  it("validates the author's documentation links", async () => {
+    const input = await sampleInput();
+    const links = [{ url: "https://jane.example/drafts", label: "Drafts and notes" }];
+    expect(valid({ ...input, disclosure: { ...input.disclosure, links } }).disclosure.links).toEqual(links);
+    const result = validateRegistration({
+      ...input,
+      disclosure: { ...input.disclosure, links: [{ url: "javascript:alert(1)" }] },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors[0]).toMatch(/^disclosure\.links\.0\.url: /);
   });
 });
 
@@ -89,7 +138,7 @@ describe.skipIf(!db)("registration lifecycle", () => {
     const { proofId, workId } = await prepareRegistration(d, {
       userId,
       profile,
-      registration: valid({ ...input, envelopeJson: JSON.stringify(envelope) }),
+      registration: valid({ ...input, envelopesJson: [JSON.stringify(envelope)] }),
     });
     expect(isProofId(proofId)).toBe(true);
     expect(isWorkId(workId)).toBe(true);
@@ -108,6 +157,8 @@ describe.skipIf(!db)("registration lifecycle", () => {
       issuerId: null,
     });
     expect(disclosure!.payloadHash).toBe(await hashCanonicalJson(disclosure!.payload));
+    expect(disclosure!.payload).toMatchObject({ schema: "authoro-creation-disclosure/1.1", links: [] });
+    expect(disclosure!.addedVia).toBe("registration");
     expect(submittedEnvelope).toMatchObject({
       evidenceClass: "self",
       claimType: "proof-envelope",

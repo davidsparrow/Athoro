@@ -1,6 +1,7 @@
 import { hashCanonicalJson } from "@authoro/core";
 import { embedSnippets } from "@/lib/embed";
 import type { PublicProof } from "@/lib/proof";
+import type { EvidenceSource } from "@/lib/provenance";
 import { proofUrl } from "@/lib/urls";
 
 type ProofEvent = PublicProof["events"][number];
@@ -13,9 +14,46 @@ function eventDetails(event: ProofEvent): Record<string, unknown> {
       return { proofId: data.proofId ?? null, version: data.versionNumber ?? null };
     case "withdrawn":
       return { reason: data.reason ?? null, note: data.note ?? null };
+    case "evidence-added":
+      return {
+        evidenceId: data.evidenceId ?? null,
+        claimType: data.claimType ?? null,
+        via: data.via ?? null,
+      };
+    case "evidence-revoked":
+      return {
+        evidenceId: data.evidenceId ?? null,
+        claimType: data.claimType ?? null,
+        note: data.note ?? null,
+      };
     default:
       return {};
   }
+}
+
+/** One version's source of evidence, attributed to whoever supplied it. */
+function serializeSource(source: EvidenceSource) {
+  return {
+    evidenceId: source.evidenceId,
+    claimType: source.claimType,
+    attribution: source.attribution,
+    supplier:
+      source.supplier.kind === "issuer"
+        ? { type: "issuer", name: source.supplier.name, id: source.supplier.issuerId }
+        : { type: "author", name: source.supplier.name },
+    class: source.evidenceClass,
+    addedVia: source.addedVia,
+    addedAt: source.addedAt.toISOString(),
+    approvedAt: source.approvedAt?.toISOString() ?? null,
+    status: source.status,
+    revokedAt: source.revokedAt?.toISOString() ?? null,
+    links: source.links.map((link) => ({
+      url: link.url,
+      host: link.host,
+      label: link.label ?? null,
+      reportHash: link.reportHash ?? null,
+    })),
+  };
 }
 
 /**
@@ -24,7 +62,7 @@ function eventDetails(event: ProofEvent): Record<string, unknown> {
  * account IDs, typed-name salts or private metadata.
  */
 export async function serializePublicProof(proof: PublicProof, origin: string) {
-  const { record, version, work, author, evidence, authorAttestation, versions, events } = proof;
+  const { record, version, work, author, evidence, authorAttestation, provenance, events } = proof;
   const url = proofUrl(record.publicId, origin);
   return {
     object: "proof",
@@ -71,19 +109,23 @@ export async function serializePublicProof(proof: PublicProof, origin: string) {
         submittedBy: item.issuerId ? "issuer" : "author",
         status: item.status,
         signatureStatus: item.signatureStatus,
+        addedVia: item.addedVia,
         createdAt: item.createdAt.toISOString(),
+        approvedAt: item.addedVia === "api" ? (item.reviewedAt?.toISOString() ?? null) : null,
         revokedAt: item.revokedAt?.toISOString() ?? null,
+        revocationNote: item.status === "revoked" ? item.revocationReason : null,
         payload: item.payload,
         payloadHash: item.payloadHash,
         intact: (await hashCanonicalJson(item.payload)) === item.payloadHash,
       })),
     ),
-    versions: versions.map((v) => ({
+    versions: provenance.map(({ version: v, sources }) => ({
       id: v.proofId,
       number: v.versionNumber,
       status: v.status,
       registeredAt: v.registeredAt?.toISOString() ?? null,
       url: proofUrl(v.proofId, origin),
+      sources: sources.map(serializeSource),
     })),
     events: events.map((event) => ({
       type: event.eventType,

@@ -10,6 +10,8 @@ import {
   works,
   workVersions,
 } from "@/db/schema";
+import { PUBLIC_EVIDENCE_STATUSES } from "./evidence";
+import { buildProvenance } from "./provenance";
 
 /**
  * Everything the public proof page shows for one record. Returns null for
@@ -31,12 +33,7 @@ export async function getPublicProof(db: Database, proofId: string, viewerId?: s
     return isOwner ? { kind: "pending" as const, proofId } : null;
   if (row.record.visibility === "private" && !isOwner) return null;
 
-  const [evidence, attestation, events, versions] = await Promise.all([
-    db
-      .select()
-      .from(attestations)
-      .where(eq(attestations.workVersionId, row.version.id))
-      .orderBy(asc(attestations.createdAt)),
+  const [attestation, events, versions, pendingEvidence] = await Promise.all([
     db
       .select({
         statementVersion: authorAttestations.statementVersion,
@@ -58,8 +55,10 @@ export async function getPublicProof(db: Database, proofId: string, viewerId?: s
       .orderBy(asc(recordEvents.createdAt), asc(recordEvents.id)),
     db
       .select({
+        workVersionId: workVersions.id,
         proofId: proofRecords.publicId,
         versionNumber: workVersions.versionNumber,
+        authorDisplayName: workVersions.authorDisplayName,
         status: proofRecords.status,
         registeredAt: proofRecords.registeredAt,
         contentHash: workVersions.contentHash,
@@ -67,9 +66,41 @@ export async function getPublicProof(db: Database, proofId: string, viewerId?: s
       })
       .from(workVersions)
       .innerJoin(proofRecords, eq(proofRecords.workVersionId, workVersions.id))
-      .where(and(eq(workVersions.workId, row.work.id), ne(proofRecords.status, "pending_attestation")))
+      .where(
+        and(
+          eq(workVersions.workId, row.work.id),
+          ne(proofRecords.status, "pending_attestation"),
+          // Private versions are listed only for their owner.
+          isOwner ? undefined : ne(proofRecords.visibility, "private"),
+        ),
+      )
       .orderBy(asc(workVersions.versionNumber)),
+    // Submissions waiting for the author's approval are shown only to the author.
+    isOwner
+      ? db
+          .select()
+          .from(attestations)
+          .where(
+            and(eq(attestations.workVersionId, row.version.id), eq(attestations.status, "pending_approval")),
+          )
+          .orderBy(asc(attestations.createdAt))
+      : Promise.resolve([]),
   ]);
+
+  // Every version's public evidence, for this record's cards and the provenance history.
+  const allEvidence = await db
+    .select()
+    .from(attestations)
+    .where(
+      and(
+        inArray(
+          attestations.workVersionId,
+          versions.map((version) => version.workVersionId),
+        ),
+        inArray(attestations.status, [...PUBLIC_EVIDENCE_STATUSES]),
+      ),
+    )
+    .orderBy(asc(attestations.createdAt));
 
   return {
     kind: "record" as const,
@@ -82,10 +113,12 @@ export async function getPublicProof(db: Database, proofId: string, viewerId?: s
       handle: row.profile.handle,
       isPublic: row.profile.isPublic,
     },
-    evidence,
+    evidence: allEvidence.filter((item) => item.workVersionId === row.version.id),
+    pendingEvidence,
     authorAttestation: attestation[0] ?? null,
     events,
     versions,
+    provenance: buildProvenance(versions, allEvidence),
   };
 }
 

@@ -7,7 +7,7 @@ Authoro is a public provenance registry for creative work. Read `Authoro-prd` fo
 - **Evidence, not verdicts.** Never write copy or code that says a work is "human-written", "AI-generated", "original" or "certified", and never compute a trust score. Describe concrete claims and who made them. Use the vocabulary in `packages/core/src/evidence.ts`.
 - **Attribute every claim.** A third-party claim is "Reported by X". Anything the author supplies is labelled "Author supplied". Never present an unverified submission as an Authoro fact.
 - **Humans finalize.** Agents and integrations may prepare a registration, but only the authenticated author can complete the attestation.
-- **Nothing is silently rewritten.** Registered versions, attestation claims and event logs are immutable, and Postgres triggers enforce it (`apps/web/drizzle/0001_immutability.sql`). Corrections, revocations and withdrawals are new events or forward-only status changes.
+- **Nothing is silently rewritten.** Registered versions, attestation claims and event logs are immutable, and Postgres triggers enforce it (`apps/web/drizzle/0001_immutability.sql`, with evidence review rules in `0007_evidence_review_rules.sql`). Corrections, revocations and withdrawals are new events or forward-only status changes.
 - **Proof without surveillance.** Store hashes and aggregate evidence, not documents or raw telemetry. Documents are fingerprinted in the browser.
 - **Public lookup stays free.** Resolving `/p/<id>` and verifying a document are never paywalled.
 
@@ -21,4 +21,5 @@ Authoro is a public provenance registry for creative work. Read `Authoro-prd` fo
 - Auth: Better Auth (`apps/web/src/lib/auth.ts`). Pages call `requireSession()` or `requireAuthor()` from `src/lib/session.ts`, never a layout-only check. After a successful sign-in or sign-out, do a full navigation (`window.location.assign`) so no signed-in page survives in the client router cache.
 - Don't import `server-only` from modules reachable from `src/lib/auth.ts`: the Better Auth CLI can't load them.
 - The editing tools decode `\uXXXX` escapes into literal characters. When a regex or string needs an escape (invisible or combining characters especially), write it through a script with an explicit backslash and check the bytes.
+- Server actions that change the page they were called from call `refresh()` from `next/cache` and return. Don't `redirect()` to the same path: Next skips the refetch when the URL has a `#fragment`.
 - API v1 lives in `apps/web/src/app/api/v1` with shared helpers in `src/lib/api` (errors, CORS, rate limits, key auth). Route tests call the handlers directly against the test database (`test/api-routes.test.ts`). API keys can never finalize a registration: only `/attest/[id]`, completed by the signed-in author, can.

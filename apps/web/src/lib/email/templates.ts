@@ -120,3 +120,39 @@ export function securityNoticeEmail(
     html: layout({ heading: subject, intro, action: "Review sign-in security", url: settingsUrl, outro }),
   };
 }
+
+/**
+ * Tells the author an integration submitted evidence for one of their records.
+ * Nothing is public until they approve it.
+ */
+export function evidenceSubmittedEmail(
+  to: string,
+  name: string | null | undefined,
+  submission: {
+    /** The issuer a Proof Envelope names, if the evidence is one. */
+    issuer: string | null;
+    keyName: string;
+    title: string;
+    versionNumber: number;
+    proofId: string;
+    reviewUrl: string;
+  },
+): EmailMessage {
+  const what = submission.issuer ? `A Proof Envelope from ${submission.issuer}` : "Links to documentation";
+  const subject = `Evidence waiting for your approval: ${submission.title}`;
+  const intro = `${what} arrived for version ${submission.versionNumber} of “${submission.title}” (${submission.proofId}), sent with your API key “${submission.keyName}”. It stays off your public record until you approve it.`;
+  const outro =
+    "If you don't recognize it, decline it and revoke the key in Settings. Your record doesn't change unless you approve.";
+  return {
+    to,
+    subject,
+    text: `${greeting(name)}\n\n${intro}\n\n${submission.reviewUrl}\n\n${outro}`,
+    html: layout({
+      heading: "Evidence waiting for your approval",
+      intro,
+      action: "Review it",
+      url: submission.reviewUrl,
+      outro,
+    }),
+  };
+}

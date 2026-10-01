@@ -19,14 +19,20 @@ import { headers } from "next/headers";
 import { after } from "next/server";
 import { cache, type ReactNode } from "react";
 import { AuthoroMark } from "@/components/authoro-mark";
+import { DocumentationLinks } from "@/components/documentation-links";
 import { buttonClass } from "@/components/ui";
 import { db } from "@/db";
 import { formatBytes, formatDate, formatDateTime, formatNumber } from "@/lib/format";
 import { getMetricTotals, getPublicProof, incrementMetric, isLikelyBot, type PublicProof } from "@/lib/proof";
+import { describeSource, shownLinks } from "@/lib/provenance";
 import { isWithdrawalReason, WITHDRAWAL_REASONS } from "@/lib/registration";
 import { getSession } from "@/lib/session";
 import { appOrigin, displayUrl, proofUrl } from "@/lib/urls";
+import { AddEvidenceForm } from "./add-evidence-form";
 import { EmbedPanel } from "./embed-panel";
+import { ProvenanceHistory } from "./provenance-history";
+import { ReviewEvidence } from "./review-evidence";
+import { RevokeEvidenceForm } from "./revoke-evidence-form";
 import { VerifyCopy } from "./verify-copy";
 import { WithdrawForm } from "./withdraw-form";
 
@@ -75,9 +81,20 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
     });
   }
 
-  const { record, version, work, author, evidence, authorAttestation, versions } = proof;
-  const disclosure = evidence.find((item) => item.claimType === "creation-disclosure");
-  const envelopes = evidence.filter((item) => item.claimType === "proof-envelope");
+  const { record, version, work, author, evidence, authorAttestation, versions, pendingEvidence } = proof;
+  // What the author attested to, and what was added to the record afterwards.
+  const attested = evidence.filter((item) => item.addedVia === "registration");
+  const addedLater = evidence.filter((item) => item.addedVia !== "registration");
+  const disclosure = attested.find((item) => item.claimType === "creation-disclosure");
+  const envelopes = attested.filter((item) => item.claimType === "proof-envelope");
+  const reporters = [
+    ...new Set(
+      evidence
+        .filter((item) => item.claimType === "proof-envelope" && item.status === "active")
+        .map((item) => (item.payload as ProofEnvelope).issuer.name),
+    ),
+  ];
+  const hasLinks = proof.provenance.some(({ sources }) => sources.some((source) => source.links.length));
   const disclosurePayload = disclosure?.payload as DisclosurePayload | undefined;
   const usedAi = disclosurePayload?.methods.some((m) => m === "ai-assisted" || m === "ai-generated-sections");
 
@@ -161,12 +178,61 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
         </div>
       ) : null}
 
+      {proof.isOwner && pendingEvidence.length ? (
+        <section
+          id="review"
+          className="mt-8 scroll-mt-8 rounded-xl border border-accent/40 bg-paper-raised p-6"
+        >
+          <p className="text-xs font-medium tracking-wide text-accent uppercase">Only you can see this</p>
+          <h2 className="mt-2 font-serif text-2xl">Waiting for your approval</h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            {pendingEvidence.length === 1 ? "This was" : "These were"} sent with one of your API keys.{" "}
+            {record.status === "registered"
+              ? "Nothing appears on the record until you approve it. Approved evidence is shown as added after your attestation; declining is final and nothing is shown."
+              : "This record is withdrawn and final, so nothing more can be added to it. Decline to clear this list."}
+          </p>
+          <div className="mt-5 space-y-4">
+            {pendingEvidence.map((item) => {
+              const source = describeSource(item, author.displayName);
+              const envelope = item.claimType === "proof-envelope" ? (item.payload as ProofEnvelope) : null;
+              return (
+                <div key={item.id} className="rounded-lg border border-line p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-medium">
+                        {envelope ? source.attribution : "Links to documentation"}
+                      </h3>
+                      <p className="text-sm text-ink-muted">
+                        Sent {formatDateTime(item.createdAt)}
+                        {envelope
+                          ? ` · ${EVIDENCE_CLASSES[item.evidenceClass].label}`
+                          : " · would show as Author supplied"}
+                      </p>
+                    </div>
+                    <span className="rounded bg-caution-soft px-2 py-0.5 text-xs text-caution">
+                      Not public
+                    </span>
+                  </div>
+                  {envelope ? <Rows rows={envelopeRows(envelope, true)} /> : null}
+                  <DocumentationLinks links={source.links} supplier={source.supplier.name} />
+                  <ReviewEvidence
+                    proofId={proofId}
+                    evidenceId={item.id}
+                    canApprove={record.status === "registered"}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
       <ul className="mt-8 flex flex-wrap gap-2 text-sm">
         {authorAttestation ? <Badge tone="accent">✓ Author attested</Badge> : null}
         <Badge tone="accent">✓ Fingerprint registered</Badge>
         {usedAi ? <Badge>AI use disclosed by author</Badge> : null}
-        {envelopes.map((item) => (
-          <Badge key={item.id}>Reported by {(item.payload as ProofEnvelope).issuer.name}</Badge>
+        {reporters.map((name) => (
+          <Badge key={name}>Reported by {name}</Badge>
         ))}
       </ul>
 
@@ -212,7 +278,7 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
         </div>
       </Section>
 
-      <Section title="Evidence">
+      <Section title="Evidence" id="evidence">
         <div className="space-y-4">
           {disclosurePayload && disclosure ? (
             <EvidenceCard
@@ -240,73 +306,88 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
                   {disclosurePayload.note}
                 </blockquote>
               ) : null}
+              <DocumentationLinks links={shownLinks(disclosure.payload)} supplier={author.displayName} />
             </EvidenceCard>
           ) : null}
 
-          {envelopes.map((item) => {
-            const envelope = item.payload as ProofEnvelope;
-            const { method } = envelope.evidence;
-            const detailRows = Object.entries(envelope.evidence)
-              .filter(
-                ([key, value]) =>
-                  key !== "class" &&
-                  key !== "method" &&
-                  ["string", "number", "boolean"].includes(typeof value),
-              )
-              .map(([key, value]): [string, ReactNode] => [
-                humanize(key),
-                typeof value === "number" ? formatNumber(value) : String(value),
-              ]);
-            return (
-              <EvidenceCard
-                key={item.id}
-                title={`Reported by ${envelope.issuer.name}`}
-                source={`${EVIDENCE_CLASSES[item.evidenceClass].label} · submitted by the author`}
-                label={item.signatureStatus === "valid" ? "Signature verified" : "Unverified"}
-                revoked={item.status === "revoked" ? item.revokedAt : null}
-              >
-                <Rows
-                  rows={[
-                    ["Method", humanize(method)],
-                    envelope.timeline?.startedAt || envelope.timeline?.completedAt
-                      ? [
-                          "Period",
-                          [envelope.timeline.startedAt, envelope.timeline.completedAt]
-                            .filter(Boolean)
-                            .map((t) => formatDate(t!))
-                            .join(" – "),
-                        ]
-                      : null,
-                    ...(record.evidenceDisclosure === "minimal" ? [] : detailRows),
-                  ]}
-                />
-                <p className="mt-4 text-xs text-ink-muted">
-                  {envelope.issuer.name}&apos;s signature{" "}
-                  {item.signature ? "hasn't been verified yet" : "wasn't included"}. Authoro shows this as the
-                  author submitted it.
-                </p>
-              </EvidenceCard>
-            );
-          })}
+          {envelopes.map((item) => (
+            <EnvelopeCard
+              key={item.id}
+              item={item}
+              detailed={record.evidenceDisclosure !== "minimal"}
+              source={`${EVIDENCE_CLASSES[item.evidenceClass].label} · submitted by the author`}
+            />
+          ))}
         </div>
+
+        {addedLater.length ? (
+          <div className="mt-10">
+            <h3 className="text-xs font-medium tracking-wide text-ink-muted uppercase">
+              Added after registration
+            </h3>
+            <p className="mt-1 mb-4 text-sm text-ink-muted">
+              These came after {author.displayName}&apos;s attestation and aren&apos;t part of it. Each shows
+              when it was added.
+            </p>
+            <div className="space-y-4">
+              {addedLater.map((item) => {
+                const sent = formatDate(item.createdAt);
+                const approved = item.reviewedAt ? formatDate(item.reviewedAt) : sent;
+                const added =
+                  item.addedVia !== "api"
+                    ? `added by ${author.displayName} on ${sent}`
+                    : sent === approved
+                      ? `sent by an integration and approved by ${author.displayName} on ${sent}`
+                      : `sent by an integration on ${sent} and approved by ${author.displayName} on ${approved}`;
+                const revoke =
+                  proof.isOwner && record.status === "registered" && item.status !== "revoked" ? (
+                    <RevokeEvidenceForm proofId={proofId} evidenceId={item.id} />
+                  ) : null;
+                return item.claimType === "proof-envelope" ? (
+                  <EnvelopeCard
+                    key={item.id}
+                    item={item}
+                    detailed={record.evidenceDisclosure !== "minimal"}
+                    source={`${EVIDENCE_CLASSES[item.evidenceClass].label} · ${added}`}
+                    footer={revoke}
+                  />
+                ) : (
+                  <EvidenceCard
+                    key={item.id}
+                    title="Documentation"
+                    source={added.charAt(0).toUpperCase() + added.slice(1)}
+                    label="Author supplied"
+                    revoked={item.status === "revoked" ? item.revokedAt : null}
+                    revocationNote={item.revocationReason}
+                  >
+                    <DocumentationLinks
+                      links={shownLinks(item.payload)}
+                      supplier={author.displayName}
+                      divided={false}
+                    />
+                    {revoke}
+                  </EvidenceCard>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {hasLinks ? (
+          <p className="mt-6 text-xs leading-relaxed text-ink-muted">
+            Documentation links lead to the sites named, supplied by whoever submitted the evidence. Authoro
+            doesn&apos;t host, fetch or check them. A report fingerprint lets you check that a copy you
+            download is the one its submitter described.
+          </p>
+        ) : null}
       </Section>
 
       {versions.length > 1 ? (
-        <Section title="Versions">
-          <ol className="divide-y divide-line rounded-xl border border-line bg-paper-raised text-sm">
-            {versions.map((v) => (
-              <li key={v.proofId} className="flex items-center justify-between gap-3 px-5 py-3">
-                <span>
-                  Version {v.versionNumber}
-                  {v.status === "withdrawn" ? <span className="text-ink-muted"> · withdrawn</span> : null}
-                  {v.proofId === proofId ? <span className="ml-2 text-ink-muted">(this record)</span> : null}
-                </span>
-                <Link href={`/p/${v.proofId}`} className="font-mono text-ink-muted hover:text-ink">
-                  {v.proofId}
-                </Link>
-              </li>
-            ))}
-          </ol>
+        <Section title="Provenance history">
+          <p className="-mt-2 mb-5 text-sm text-ink-muted">
+            Every version of this work and who supplied evidence for it, oldest first.
+          </p>
+          <ProvenanceHistory provenance={proof.provenance} currentProofId={proofId} />
         </Section>
       ) : null}
 
@@ -416,6 +497,17 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
                   Register a new version
                 </Link>
               </div>
+              {record.status === "registered" ? (
+                <div className="py-6">
+                  <h3 className="font-medium">Add documentation or evidence</h3>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    Link to documentation you&apos;ve published since, or attach a Proof Envelope from a
+                    writing app, school or publisher. Each addition is dated and shown separately from what
+                    you attested to.
+                  </p>
+                  <AddEvidenceForm proofId={proofId} />
+                </div>
+              ) : null}
               <div className="pt-6">
                 <h3 className="font-medium">Withdraw this record</h3>
                 {record.status === "registered" ? (
@@ -468,6 +560,16 @@ function describeEvent(event: PublicProof["events"][number]): [string, ReactNode
         </>,
       ];
     }
+    case "evidence-added":
+      return [
+        "Evidence added",
+        `${data.claimType === "proof-envelope" ? "A Proof Envelope" : "Documentation links"}${data.via === "api" ? ", sent by an integration and approved by the author" : ", by the author"}, ${at}`,
+      ];
+    case "evidence-revoked":
+      return [
+        "Evidence revoked",
+        `${data.claimType === "proof-envelope" ? "A Proof Envelope" : "Documentation links"}, by the author, ${at}${typeof data.note === "string" && data.note ? `. Note: ${data.note}` : ""}`,
+      ];
     case "withdrawn":
       return [
         "Withdrawn",
@@ -486,9 +588,9 @@ function humanize(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, id, children }: { title: string; id?: string; children: ReactNode }) {
   return (
-    <section className="mt-12">
+    <section id={id} className="mt-12 scroll-mt-8">
       <h2 className="mb-5 font-serif text-2xl tracking-tight">{title}</h2>
       {children}
     </section>
@@ -527,21 +629,90 @@ function EvidenceCard(props: {
   source: string;
   label: string;
   revoked: Date | null;
+  revocationNote?: string | null;
   children: ReactNode;
 }) {
   return (
     <div className={`rounded-xl border border-line bg-paper-raised p-5 ${props.revoked ? "opacity-70" : ""}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <h3 className={`font-medium ${props.revoked ? "line-through" : ""}`}>{props.title}</h3>
           <p className="text-sm text-ink-muted">{props.source}</p>
         </div>
-        <span className="rounded bg-caution-soft px-2 py-0.5 text-xs text-caution">
+        <span className="shrink-0 rounded bg-caution-soft px-2 py-0.5 text-xs whitespace-nowrap text-caution">
           {props.revoked ? `Revoked ${formatDate(props.revoked)}` : props.label}
         </span>
       </div>
+      {props.revoked ? (
+        <p className="mt-2 text-sm text-ink-muted">
+          Revoked by the author on {formatDate(props.revoked)}
+          {props.revocationNote ? `: ${props.revocationNote}` : "."}
+        </p>
+      ) : null}
       <div className="mt-2">{props.children}</div>
     </div>
+  );
+}
+
+type EvidenceItem = PublicProof["evidence"][number];
+
+/** An envelope's method, period and, unless the record is minimal, its provider-specific details. */
+function envelopeRows(envelope: ProofEnvelope, detailed: boolean): ([string, ReactNode] | null)[] {
+  const details = Object.entries(envelope.evidence)
+    .filter(
+      ([key, value]) =>
+        key !== "class" && key !== "method" && ["string", "number", "boolean"].includes(typeof value),
+    )
+    .map(([key, value]): [string, ReactNode] => [
+      humanize(key),
+      typeof value === "number" ? formatNumber(value) : String(value),
+    ]);
+  const { startedAt, completedAt } = envelope.timeline ?? {};
+  return [
+    ["Method", humanize(envelope.evidence.method)],
+    startedAt || completedAt
+      ? [
+          "Period",
+          [startedAt, completedAt]
+            .filter(Boolean)
+            .map((t) => formatDate(t!))
+            .join(" – "),
+        ]
+      : null,
+    ...(detailed ? details : []),
+  ];
+}
+
+/** A Proof Envelope, attributed to the organization it names. */
+function EnvelopeCard({
+  item,
+  source,
+  detailed,
+  footer,
+}: {
+  item: EvidenceItem;
+  source: string;
+  detailed: boolean;
+  footer?: ReactNode;
+}) {
+  const envelope = item.payload as ProofEnvelope;
+  return (
+    <EvidenceCard
+      title={`Reported by ${envelope.issuer.name}`}
+      source={source}
+      label={item.signatureStatus === "valid" ? "Signature verified" : "Unverified"}
+      revoked={item.status === "revoked" ? item.revokedAt : null}
+      revocationNote={item.revocationReason}
+    >
+      <Rows rows={envelopeRows(envelope, detailed)} />
+      <DocumentationLinks links={shownLinks(envelope)} supplier={envelope.issuer.name} />
+      <p className="mt-4 text-xs text-ink-muted">
+        {envelope.issuer.name}&apos;s signature{" "}
+        {item.signature ? "hasn't been verified yet" : "wasn't included"}. Authoro shows this as{" "}
+        {item.addedVia === "api" ? "it was submitted" : "the author submitted it"}.
+      </p>
+      {footer}
+    </EvidenceCard>
   );
 }
 

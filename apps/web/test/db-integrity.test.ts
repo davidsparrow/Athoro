@@ -196,6 +196,86 @@ describe.skipIf(!db)("database integrity rules", () => {
     );
   });
 
+  async function addEvidence(
+    versionId: string,
+    values: Partial<typeof attestations.$inferInsert> = {},
+  ): Promise<string> {
+    const payload = { schema: "authoro-documentation/1.0", links: [{ url: "https://jane.example/notes" }] };
+    const [row] = await d
+      .insert(attestations)
+      .values({
+        workVersionId: versionId,
+        evidenceClass: "self",
+        claimType: "documentation",
+        payload,
+        payloadHash: await hashCanonicalJson(payload),
+        addedVia: "author",
+        ...values,
+      })
+      .returning();
+    return row!.id;
+  }
+
+  const setEvidence = (id: string, values: Partial<typeof attestations.$inferInsert>) =>
+    d.update(attestations).set(values).where(eq(attestations.id, id));
+
+  it("separates evidence the author attested to from evidence added later", async () => {
+    const { record, version, attestation } = await seedPendingRecord();
+    expect(attestation.addedVia).toBe("registration");
+    await expectRejected(addEvidence(version.id), /only once it is registered/);
+    await register(record.id);
+    await expectRejected(addEvidence(version.id, { addedVia: "registration" }), /evidence added now/);
+    const id = await addEvidence(version.id);
+    await expectRejected(setEvidence(id, { addedVia: "registration" }), /is immutable/);
+    await expectRejected(
+      addEvidence(version.id, { status: "revoked", revokedAt: new Date() }),
+      /active or awaiting/,
+    );
+    await expectRejected(addEvidence(version.id, { reviewedAt: new Date() }), /not been reviewed/);
+  });
+
+  it("makes evidence from an API key wait for the author's approval, decided once", async () => {
+    const { record, version } = await seedPendingRecord();
+    await register(record.id);
+    await expectRejected(addEvidence(version.id, { addedVia: "api" }), /awaits the author's approval/);
+    await expectRejected(
+      addEvidence(version.id, { status: "pending_approval" }),
+      /awaits the author's approval/,
+    );
+    const id = await addEvidence(version.id, { addedVia: "api", status: "pending_approval" });
+
+    await expectRejected(setEvidence(id, { status: "active" }), /reviewed_at is set when/);
+    await expectRejected(setEvidence(id, { reviewedAt: new Date() }), /reviewed_at is set when/);
+    await expectRejected(setEvidence(id, { status: "revoked", revokedAt: new Date() }), /approve or decline/);
+    await setEvidence(id, { status: "active", reviewedAt: new Date() });
+    await expectRejected(setEvidence(id, { reviewedAt: new Date(0) }), /review time/);
+    await expectRejected(setEvidence(id, { status: "pending_approval" }), /already public/);
+    await expectRejected(setEvidence(id, { status: "declined" }), /already public/);
+    await setEvidence(id, { status: "revoked", revokedAt: new Date() });
+
+    const declined = await addEvidence(version.id, { addedVia: "api", status: "pending_approval" });
+    await setEvidence(declined, { status: "declined", reviewedAt: new Date() });
+    await expectRejected(setEvidence(declined, { status: "active" }), /declined and is final/);
+    await expectRejected(d.delete(attestations).where(eq(attestations.id, declined)), /revoke it instead/);
+  });
+
+  it("adds and approves nothing on a withdrawn record", async () => {
+    const { record, version } = await seedPendingRecord();
+    await register(record.id);
+    const pending = await addEvidence(version.id, { addedVia: "api", status: "pending_approval" });
+    const other = await addEvidence(version.id, { addedVia: "api", status: "pending_approval" });
+    await d
+      .update(proofRecords)
+      .set({ status: "withdrawn", withdrawnAt: new Date(), withdrawnReason: "Author request" })
+      .where(eq(proofRecords.id, record.id));
+    await expectRejected(addEvidence(version.id), /withdrawn record/);
+    await expectRejected(
+      setEvidence(pending, { status: "active", reviewedAt: new Date() }),
+      /cannot be approved/,
+    );
+    await setEvidence(other, { status: "declined", reviewedAt: new Date() });
+  });
+
   it("enforces hash formats and self-attestations without issuers", async () => {
     const { version } = await seedPendingRecord();
     await expectRejected(

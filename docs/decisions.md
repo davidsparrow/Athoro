@@ -115,7 +115,7 @@ Author attestation payloads (`authoro-author-attestation/1.0`) carry `author`, t
 - **Accountability.** Passkeys added or removed, TOTP turned on or off, backup codes regenerated or used to sign in: each is an audit event and an email to the account holder. A session held back for its code isn't logged as created.
 - **Passkey-signed attestations** (PRD §20) wait for V1, where they fit with signed Proof Envelopes and issuer keys.
 
-## 022: Documentation links and multi-source provenance (planned for chunk 8)
+## 022: Documentation links and multi-source provenance (chunk 8)
 
 **Decided:** 2026-09-30, with the product owner.
 
@@ -124,3 +124,17 @@ Author attestation payloads (`authoro-author-attestation/1.0`) carry `author`, t
 - **Append-only evidence.** Evidence and links can be added to a registered version later, each with its own date and source. The author's original attestation is unchanged. Evidence added by a platform appears only after the author approves it (humans finalize).
 - **Multi-source revisions.** Each version keeps its own evidence from any mix of sources, and the record shows a provenance history across versions.
 - **Placement.** Chunk 8, before V0.5 Pro. Direct submission by platforms and schools with verified signing keys stays in V1 (issuer accounts): they prepare, the author attests.
+
+## 023: Multi-source provenance in practice
+
+**Decided:** 2026-10-01; revoking later additions, approval emails, link labels and how additions are confirmed with the product owner.
+
+- **Links.** `https://` on a public domain (no IP addresses or single-label hosts), without credentials, whitespace, control or bidirectional characters, up to 2,000 characters; an optional label of up to 80 characters and an optional report hash; five per piece of evidence, each URL once. They're shown as "Documentation hosted by <host> ↗" (punycode, `www.` dropped) with `rel="nofollow ugc noopener"`, inside the card of whoever supplied them. A reader can check a downloaded report against its hash in the browser; nothing is uploaded or fetched.
+- **Schemas.** `authoro-proof/1.1` adds `links`. A 1.0 envelope that carries `links` is rejected rather than silently stripped. New disclosures are written as `authoro-creation-disclosure/1.1` (with `links`, empty by default), and stored 1.0 disclosures stay valid. Links the author adds after registration use `authoro-documentation/1.0`.
+- **Several envelopes.** Up to five per version, from the wizard or `envelopes: [...]`; a single `envelope` still works. Each must describe the document and be attached once.
+- **How evidence arrived.** `attestations.added_via` is `registration`, `author` or `api`, and never changes. Triggers keep `registration` evidence before the attestation and the rest after it, and add nothing to a withdrawn record.
+- **Approval.** Evidence sent with an API key starts as `pending_approval` and is approved (`active`) or `declined` once, at `reviewed_at`. The database enforces that order and that only API evidence waits. Declined submissions stay private and are kept rather than deleted, so nothing on a registered record is ever deleted. The author is emailed once per submission, with at most 10 waiting per record, and sees them on the dashboard and the record. A version takes up to 20 additions after registration.
+- **Revocation.** The author can revoke evidence added after registration, with an optional public note. It stays visible, struck through, and the record gains an `evidence-revoked` event. Evidence submitted with the registration is part of what the author attested to and can't be revoked.
+- **Confirming additions.** A checkbox rather than a retyped name: the attestation is unchanged, and each addition is dated and listed under "Added after registration".
+- **Provenance history.** A record with several versions lists each public version with its sources and links, oldest first, and `GET /proofs/{id}` returns the same as `versions[].sources`. Private versions are left out for readers.
+- **Refreshing in place.** Record actions call `refresh()` instead of redirecting to the same path, which Next ignores when the URL has a fragment, such as an email's `#review` or the dashboard's `#embed`.
