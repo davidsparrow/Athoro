@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "pnpm vercel-build"
+  "buildCommand": "pnpm vercel-build",
+  "crons": [
+    {
+      "path": "/api/cron/embargoes",
+      "schedule": "7 0 * * *"
+    }
+  ]
 }

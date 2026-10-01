@@ -14,6 +14,7 @@ import { DocumentationLinks } from "@/components/documentation-links";
 import { Alert, Card, buttonClass } from "@/components/ui";
 import { db } from "@/db";
 import { describeDisclosure } from "@/lib/disclosure";
+import { getPlan } from "@/lib/entitlements";
 import { formatBytes, formatDate, formatNumber } from "@/lib/format";
 import { shownLinks } from "@/lib/provenance";
 import { getOwnedRegistration } from "@/lib/registration";
@@ -31,6 +32,7 @@ export default async function AttestPage({ params }: PageProps<"/attest/[proofId
   if (!registration) notFound();
 
   const { record, version, work, evidence, previous } = registration;
+  const canUsePro = (await getPlan(db, session.user.id)) === "pro";
   const disclosure = evidence.find((item) => item.claimType === "creation-disclosure");
   const envelopes = evidence.filter((item) => item.claimType === "proof-envelope");
   const described = disclosure ? describeDisclosure(disclosure.payload as CreationDisclosure) : null;
@@ -159,12 +161,18 @@ export default async function AttestPage({ params }: PageProps<"/attest/[proofId
           );
         })}
 
-        <Card className="border-ink/20">
-          <h2 className="font-medium">Attestation</h2>
-          <div className="mt-5">
-            <AttestForm proofId={proofId} byline={profile.displayName} />
-          </div>
-        </Card>
+        <AttestForm
+          proofId={proofId}
+          byline={profile.displayName}
+          access={{
+            // Without Pro, a prepared private or unlisted record starts from Public.
+            visibility: canUsePro ? record.visibility : "public",
+            embargoUntil: canUsePro ? (record.embargoUntil?.toISOString() ?? null) : null,
+            showFingerprint: record.embargoShowsFingerprint,
+            preset: record.evidenceDisclosure,
+            canUsePro,
+          }}
+        />
       </div>
     </div>
   );

@@ -286,20 +286,43 @@ sha256:93ab8e...
 8. Privacy
 Raw creation history should not be public by default.
 Authors need control.
+Two rules govern every visibility and disclosure choice:
+* Visibility can decrease disclosure, but never erase provenance.
+* Minimal hides content, not verifiability.
 Public visibility presets:
 Minimal
 Shows:
 * work
 * author
 * date
-* providers
-* integrity status
+* providers: every issuer stays named ("Reported by X"), and author-supplied claims stay labelled "Author supplied"
+* document fingerprint and integrity status
+* verification and documentation links
+* correction, revocation, withdrawal and dispute status
+Hides:
+* raw envelope details
+* detailed telemetry and statistics
+* the author's note
+* the raw event history
+Minimal preserves verification links by design. Privacy can hide content; it should not hide provenance. Minimal means less exposed detail, not less verifiability: hiding the underlying links would turn the record into "trust the badge" rather than "inspect the evidence".
+Minimal also withholds the hidden content from the public API, but keeps the verification primitives: each evidence object's hash, issuer, schema, signature metadata, timestamps and verification status. A reader can confirm that a registered evidence object is unchanged without learning its private contents.
+Two kinds of links:
+* Documentation links: public issuer documentation, methodology pages, registry records and source attestations. Always visible, under every preset.
+* Private evidence links: links that expose private drafts, replay data, deleted text or personally sensitive information. These obey the visibility preset.
+Until links can be told apart (V1), every link is a documentation link and stays visible.
+A Minimal record might show, per source:
+Creation Process Observed
+Reported by Writermark: continuous composition observed
+✓ Signature valid (once issuer keys exist; until then "Unverified")
+[View source evidence]
+"View source evidence" opens an Authoro evidence page, never a third-party URL directly. Under Minimal it is sparse but still proves that the evidence object exists, who reported it, when, and that it is unchanged. Under fuller presets it shows the evidence itself. From there, the source's own links (issuer documentation, methodology, original provider record) are offered.
 Standard
 Adds:
 * session count
 * manual/paste/AI proportions
 * high-level timeline
 * evidence methods
+* the author's note, AI uses and tools
 Detailed
 Adds:
 * expanded event statistics
@@ -308,6 +331,7 @@ Adds:
 Full Replay
 Author explicitly publishes revision replay/history.
 Authoro should never assume deletion history is public.
+Changing the preset of a record that has been public is itself recorded in the record's public history.
 
 9. V0 — Registry Prototype
 Goal
@@ -1779,9 +1803,11 @@ Anyone with Authoro ID can resolve.
 Unlisted
 Only someone with link can access.
 Private
-Visible only to owner/team.
+Visible only to owner/team. The public resolver says only that a provenance record exists for the ID.
 Embargoed
 Proof remains private until future publication date.
+A record that has been public can't be made private again as if it never existed. Its details can be restricted, but the Authoro URL keeps resolving: "This record was previously public and was restricted by its owner on [date]." The Authoro ID, registration timestamp, prior publication status, version hash, corrections, revocations and disputes, and the fact that a visibility change occurred all stay public. Otherwise someone could publish a claim, gain trust from the badge, then erase the record after a dispute.
+For a record that was private from the start, nothing beyond its existence needs to be public until the owner publishes it.
 
 40. Embargoed Registration
 Potentially valuable for:
@@ -1792,8 +1818,12 @@ Potentially valuable for:
 * agencies
 * product launches
 Authoro can establish timestamped evidence before publication without revealing the content publicly.
+The record exists and receives its immutable Authoro ID immediately. Until the embargo lifts, the public resolver shows only:
+"A provenance record exists for this Authoro ID. Its details are embargoed until October 15, 2026."
+with the registration timestamp, the embargo status, the number of issuers, and the final-artifact hash if the author explicitly permits it.
 At publication:
 Make Proof Record public
+Publication happens automatically at the embargo time unless the owner extends or cancels the scheduled release before then. The release itself is an immutable event in the record's history.
 
 41. Domain Verification
 Pro creators may verify:
@@ -2009,6 +2039,12 @@ Example categories, not final prices:
 * 24-hour human Name Check
 * Evidence Pack export
 * publisher API contract
+Launch plan (decided 2026-10-01; prices live in Stripe and can change without a release):
+Free keeps the registry generous: public records, Authoro ID, basic self-attestation, the standard Proof Mark, document hash verification, basic versioning, the basic profile, evidence presets (Minimal, Standard, Detailed), and up to 60 active works and 60 drafts. An active work is a work with a registered version that isn't withdrawn; new versions of an existing work never count against the limit.
+Pro, about $8/month or $80/year: unlimited works, private, unlisted and embargoed records, Identity Verified eligibility, domain verification, Evidence Packs, richer versioning, MCP/plugin automation, and perhaps 2–3 originality scans a month.
+Protect, about $25/month: continuous copy monitoring and larger scan allowances.
+Human Name Checks are separate one-time purchases, because they carry real labor cost.
+If Pro lapses, nothing is hidden, deleted or published: private records stay private, scheduled embargoes still lift, and only new Pro actions are unavailable.
 
 52. Human Review Marketplace
 Long-term possibility.

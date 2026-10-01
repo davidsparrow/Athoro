@@ -1,17 +1,19 @@
 import { fingerprintPastedText } from "@authoro/core";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { GET as releaseEmbargoes } from "@/app/api/cron/embargoes/route";
 import { POST as addEvidenceRoute } from "@/app/api/v1/proofs/[proofId]/evidence/route";
 import { GET as getProof, OPTIONS as proofOptions } from "@/app/api/v1/proofs/[proofId]/route";
 import { POST as verify } from "@/app/api/v1/verify/route";
 import { POST as createVersion } from "@/app/api/v1/works/[workId]/versions/route";
 import { GET as listWorks, POST as createWork } from "@/app/api/v1/works/route";
-import { apiRateLimits, user } from "@/db/schema";
+import { apiRateLimits, proofRecords, recordEvents, user } from "@/db/schema";
 import { createApiKey } from "@/lib/api/keys";
 import { PUBLIC_RATE_LIMIT } from "@/lib/api/http";
 import type { EmailMessage } from "@/lib/email/send";
 import { reviewEvidence } from "@/lib/evidence";
 import { finalizeRegistration, prepareRegistration, withdrawRecord } from "@/lib/registration";
+import { changeEvidencePreset, changeRecordAccess, type AccessChoice } from "@/lib/visibility";
 import { hashIp } from "@/lib/request-ip";
 import { createAuthor, registerWork, sampleInput, testDatabase, valid } from "./helpers";
 
@@ -41,6 +43,7 @@ describe.skipIf(!db)("API v1", () => {
   const d = db!;
 
   beforeEach(async () => {
+    vi.unstubAllEnvs();
     await d.execute(sql`TRUNCATE "user", api_rate_limits CASCADE`);
     emails.length = 0;
   });
@@ -128,6 +131,177 @@ describe.skipIf(!db)("API v1", () => {
       expect(limited.status).toBe(429);
       expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
       expect((await limited.json()).error.code).toBe("rate_limited");
+    });
+  });
+
+  describe("visibility and evidence presets", () => {
+    const get = (proofId: string) => getProof(request(`/api/v1/proofs/${proofId}`), proofParams(proofId));
+    const envelope = (contentHash: string) => ({
+      schema: "authoro-proof/1.1",
+      issuer: { id: "issuer:writermark", name: "Writermark" },
+      work: { hash: contentHash },
+      evidence: { method: "continuous-composition", sessions: 3, statistics: { pasted: 0.02 } },
+      links: [{ url: "https://writermark.example/reports/1", label: "Session report" }],
+    });
+
+    async function registerWith(access: AccessChoice, text = TEXT) {
+      vi.stubEnv("AUTHORO_ALL_PRO", "true");
+      const author = await createAuthor(d, `jane-${crypto.randomUUID().slice(0, 8)}`);
+      const input = await sampleInput(text);
+      const { proofId } = await prepareRegistration(d, {
+        userId: author.userId,
+        profile: author.profile,
+        registration: valid({
+          ...input,
+          envelopesJson: [JSON.stringify(envelope(input.document.contentHash))],
+        }),
+      });
+      await finalizeRegistration(d, { proofId, userId: author.userId, typedName: "Jane Smith", access });
+      return { author, proofId };
+    }
+    const PUBLIC: AccessChoice = { visibility: "public", embargoUntil: null, embargoShowsFingerprint: false };
+
+    it("withholds payload bodies under Minimal but keeps the hashes and who supplied them", async () => {
+      const { author, proofId } = await registerWith(PUBLIC);
+      await changeEvidencePreset(d, { proofId, userId: author.userId, preset: "minimal" });
+      const body = await (await get(proofId)).json();
+      expect(body).toMatchObject({ access: "full", evidenceDisclosure: "minimal" });
+      expect(body.evidence).toMatchObject([
+        {
+          claimType: "creation-disclosure",
+          payload: null,
+          payloadWithheld: true,
+          publicFields: { methods: ["ai-assisted"], links: [] },
+          payloadHash: expect.stringMatching(/^sha256:/),
+          intact: true,
+        },
+        {
+          claimType: "proof-envelope",
+          payload: null,
+          payloadWithheld: true,
+          publicFields: {
+            schema: "authoro-proof/1.1",
+            issuer: { id: "issuer:writermark", name: "Writermark" },
+            evidence: { method: "continuous-composition" },
+            links: [{ url: "https://writermark.example/reports/1" }],
+          },
+          signatureStatus: "unsigned",
+          signed: false,
+          intact: true,
+        },
+      ]);
+      const text = JSON.stringify(body.evidence);
+      expect(text).not.toContain("Copyediting only.");
+      expect(text).not.toContain("sessions");
+      expect(body.events.at(-1)).toMatchObject({
+        type: "evidence-disclosure-changed",
+        from: "standard",
+        to: "minimal",
+      });
+    });
+
+    it("says only that a private record exists", async () => {
+      const { proofId } = await registerWith({ ...PUBLIC, visibility: "private" });
+      const response = await get(proofId);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-robots-tag")).toBe("noindex");
+      expect(await response.json()).toEqual({
+        object: "proof",
+        id: proofId,
+        url: `${BASE}/p/${proofId}`,
+        access: "private",
+        visibility: "private",
+      });
+    });
+
+    it("shows an embargo's dates and issuer count, and a restricted record's provenance", async () => {
+      const until = new Date(Date.now() + 24 * 3_600_000);
+      const { proofId: sealed } = await registerWith({
+        visibility: "private",
+        embargoUntil: until,
+        embargoShowsFingerprint: false,
+      });
+      const embargoed = await (await get(sealed)).json();
+      expect(embargoed).toMatchObject({
+        access: "embargoed",
+        status: "registered",
+        embargo: { until: until.toISOString(), issuerCount: 1 },
+        version: null,
+        events: [{ type: "registered", visibility: "private", embargoUntil: until.toISOString() }],
+      });
+      expect(JSON.stringify(embargoed)).not.toMatch(/Future of Independent|Writermark|Jane/);
+
+      const { author, proofId } = await registerWith(PUBLIC, "Restricted later.");
+      await changeRecordAccess(d, {
+        proofId,
+        userId: author.userId,
+        choice: { ...PUBLIC, visibility: "private" },
+        confirmedRestriction: true,
+      });
+      const restricted = await (await get(proofId)).json();
+      expect(restricted).toMatchObject({
+        access: "restricted",
+        status: "registered",
+        publishedAt: expect.any(String),
+        restrictedAt: expect.any(String),
+        version: { number: 1, contentHash: expect.stringMatching(/^sha256:/) },
+        attestationHash: expect.stringMatching(/^sha256:/),
+        events: [{ type: "registered" }, { type: "visibility-changed", from: "public", to: "private" }],
+      });
+      expect(JSON.stringify(restricted)).not.toMatch(/Future of Independent|Writermark|Copyediting/);
+
+      // The fingerprint a restricted record keeps can still be checked.
+      const fingerprint = await fingerprintPastedText("Restricted later.");
+      const check = await verify(
+        request("/api/v1/verify", {
+          method: "POST",
+          body: JSON.stringify({ proofId, contentHash: fingerprint.contentHash }),
+        }),
+      );
+      expect(await check.json()).toMatchObject({
+        proof: { id: proofId, access: "restricted", status: "registered" },
+        valid: true,
+        match: { matched: true, method: "exact-bytes", sameVersion: true },
+      });
+    });
+
+    it("releases due embargoes from the cron and emails their authors", async () => {
+      const { proofId } = await registerWith({
+        visibility: "private",
+        embargoUntil: new Date(Date.now() + 10 * 60_000),
+        embargoShowsFingerprint: false,
+      });
+      // Pretend the release time has passed.
+      await d.execute(
+        sql`update proof_records set embargo_until = registered_at where public_id = ${proofId}`,
+      );
+      const cron = (authorization?: string) =>
+        releaseEmbargoes(request("/api/cron/embargoes", { headers: authorization ? { authorization } : {} }));
+      expect((await cron("Bearer whatever")).status).toBe(404);
+      vi.stubEnv("CRON_SECRET", "cron-secret-for-tests");
+      expect((await cron("Bearer wrong")).status).toBe(404);
+      const response = await cron("Bearer cron-secret-for-tests");
+      expect(await response.json()).toEqual({ released: [proofId] });
+      expect(emails).toMatchObject([{ subject: "Now public: The Future of Independent Software" }]);
+      expect((await (await get(proofId)).json()).access).toBe("full");
+      expect(await (await cron("Bearer cron-secret-for-tests")).json()).toEqual({ released: [] });
+    });
+
+    it("doesn't name a newer version visitors can't see", async () => {
+      const { author, proofId } = await registerWith(PUBLIC);
+      await d.insert(recordEvents).values({
+        proofRecordId: (await d.select().from(proofRecords).where(eq(proofRecords.publicId, proofId)))[0]!.id,
+        eventType: "newer-version-registered",
+        actorUserId: author.userId,
+        data: { proofId: "AU-PR1VAT", versionNumber: 2 },
+      });
+      const body = await (await get(proofId)).json();
+      expect(body.events.at(-1)).toEqual({
+        type: "newer-version-registered",
+        at: expect.any(String),
+        proofId: null,
+        version: 2,
+      });
     });
   });
 
@@ -277,6 +451,53 @@ describe.skipIf(!db)("API v1", () => {
         },
         { attribution: "Reported by Classroom" },
       ]);
+    });
+
+    it("takes record presets for the author to confirm, and needs Pro for private ones", async () => {
+      const author = await createAuthor(d);
+      const key = await keyFor(author.userId);
+      const input = await sampleInput(TEXT);
+      const until = new Date(Date.now() + 24 * 3_600_000).toISOString();
+      const record = { visibility: "private", embargoUntil: until, evidenceDisclosure: "minimal" };
+
+      vi.stubEnv("AUTHORO_ALL_PRO", "false");
+      const refused = await post(key, { ...input, record });
+      expect(refused.status).toBe(403);
+      expect((await refused.json()).error.code).toBe("plan_required");
+      const invalid = await post(key, { ...input, record: { visibility: "public", embargoUntil: until } });
+      expect(invalid.status).toBe(400);
+      expect((await invalid.json()).error.details).toEqual([
+        "record: Only a private record can have a scheduled release.",
+      ]);
+      const unknown = await post(key, { ...input, record: { visibility: "public", hidden: true } });
+      expect(unknown.status).toBe(400);
+
+      vi.stubEnv("AUTHORO_ALL_PRO", "true");
+      const response = await post(key, { ...input, record });
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body.record).toEqual({
+        visibility: "private",
+        embargoUntil: until,
+        showFingerprint: false,
+        evidenceDisclosure: "minimal",
+      });
+      const [prepared] = await d.select().from(proofRecords).where(eq(proofRecords.publicId, body.proofId));
+      expect(prepared).toMatchObject({
+        status: "pending_attestation",
+        visibility: "private",
+        embargoUntil: new Date(until),
+        evidenceDisclosure: "minimal",
+      });
+      // Attesting without changing them keeps them.
+      await finalizeRegistration(d, {
+        proofId: body.proofId,
+        userId: author.userId,
+        typedName: "Jane Smith",
+      });
+      expect((await (await getProof(request(`/x`), proofParams(body.proofId))).json()).access).toBe(
+        "embargoed",
+      );
     });
 
     it("refuses an envelopes value that isn't a list", async () => {

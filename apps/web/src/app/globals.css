@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 :root {
+  /* Native controls (radios, date pickers, scrollbars) follow the theme too. */
+  color-scheme: light dark;
   --paper: #fbfaf7;
   --paper-raised: #ffffff;
   --paper-sunken: #f3f1ec;

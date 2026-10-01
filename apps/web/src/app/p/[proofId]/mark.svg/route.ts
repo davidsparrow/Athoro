@@ -1,7 +1,8 @@
 import { parseProofId } from "@authoro/core";
 import { after } from "next/server";
 import { db } from "@/db";
-import type { MarkStyle, MarkTheme } from "@/lib/embed";
+import type { MarkStatus, MarkStyle, MarkTheme } from "@/lib/embed";
+import { notifyEmbargoLifted } from "@/lib/email/notices";
 import { renderMarkSvg } from "@/lib/mark-svg";
 import { getProofStatus, incrementMetric, isLikelyBot } from "@/lib/proof";
 
@@ -17,9 +18,10 @@ const SVG_HEADERS = {
 export async function GET(request: Request, { params }: RouteContext<"/p/[proofId]/mark.svg">) {
   const proofId = parseProofId((await params).proofId);
   const record = proofId ? await getProofStatus(db, proofId) : null;
-  if (!proofId || !record || record.status === "pending_attestation" || record.visibility === "private") {
+  if (!proofId || !record || record.status === "pending_attestation") {
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "public, max-age=60" } });
   }
+  record.released.forEach(notifyEmbargoLifted);
 
   const search = new URL(request.url).searchParams;
   const style: MarkStyle = search.get("style") === "icon" ? "icon" : "badge";
@@ -28,6 +30,12 @@ export async function GET(request: Request, { params }: RouteContext<"/p/[proofI
   if (!isLikelyBot(request.headers.get("user-agent"))) {
     after(() => incrementMetric(db, record.id, "markImpressions").catch(() => {}));
   }
-  const status = record.status === "withdrawn" ? "withdrawn" : "registered";
+  // Withdrawal is provenance, so it shows even when the details are hidden.
+  const status: MarkStatus =
+    record.status === "withdrawn" && record.access !== "private"
+      ? "withdrawn"
+      : record.access === "full"
+        ? "registered"
+        : record.access;
   return new Response(renderMarkSvg(proofId, style, theme, status), { headers: SVG_HEADERS });
 }

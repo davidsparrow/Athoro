@@ -56,12 +56,15 @@ describe.skipIf(!db)("public proof records", () => {
     expect(await getPublicProof(d, "AU-000000")).toBeNull();
   });
 
-  it("hides private records from everyone but the owner", async () => {
+  it("shows visitors only the surviving provenance of a restricted record", async () => {
     const author = await createAuthor(d);
     const proofId = await registerWork(d, author);
     await d.update(proofRecords).set({ visibility: "private" }).where(eq(proofRecords.publicId, proofId));
-    expect(await getPublicProof(d, proofId)).toBeNull();
-    expect(await getPublicProof(d, proofId, author.userId)).not.toBeNull();
+    expect(await getPublicProof(d, proofId)).toMatchObject({ kind: "sealed", access: "restricted" });
+    expect(await getPublicProof(d, proofId, author.userId)).toMatchObject({
+      kind: "record",
+      access: "restricted",
+    });
   });
 
   it("counts daily metrics and totals them", async () => {

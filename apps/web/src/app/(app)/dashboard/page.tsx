@@ -6,11 +6,12 @@ import { Alert, Card, buttonClass } from "@/components/ui";
 import { db } from "@/db";
 import { passkey } from "@/db/schema";
 import { listPendingEvidence } from "@/lib/evidence";
-import { formatDate, formatNumber } from "@/lib/format";
+import { formatDate, formatDateTime, formatNumber } from "@/lib/format";
 import { getMetricTotals, type MetricTotals } from "@/lib/proof";
 import { listWorksForUser } from "@/lib/registration";
 import { requireAuthor } from "@/lib/session";
 import { displayUrl, proofUrl } from "@/lib/urls";
+import { publicAccess } from "@/lib/visibility";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -29,6 +30,21 @@ function groupByWork(rows: WorkRow[]) {
     }
   }
   return [...groups.values()];
+}
+
+/** Who can see a registered record, in a few words, or null when it's simply public. */
+function visibilityNote(row: WorkRow): string | null {
+  switch (publicAccess(row)) {
+    case "embargoed":
+      // A passed release time is public already; the record says so as soon as it's read.
+      return row.embargoUntil! > new Date() ? `Embargoed until ${formatDateTime(row.embargoUntil!)}` : null;
+    case "restricted":
+      return "Restricted";
+    case "private":
+      return "Private";
+    default:
+      return row.visibility === "unlisted" ? "Unlisted" : null;
+  }
 }
 
 function sumMetrics(recordIds: string[], metrics: Map<string, MetricTotals>) {
@@ -51,7 +67,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     db,
     rows.map((row) => row.recordId),
   );
-  const registeredVersion = rows.find((row) => row.proofId === justRegistered)?.versionNumber ?? 1;
+  const registeredRow = rows.find((row) => row.proofId === justRegistered);
+  const registeredVersion = registeredRow?.versionNumber ?? 1;
+  const registeredAccess = registeredRow ? publicAccess(registeredRow) : "full";
   const pendingEvidence = await listPendingEvidence(db, session.user.id);
   const unprotected =
     !session.user.twoFactorEnabled && (await db.$count(passkey, eq(passkey.userId, session.user.id))) === 0;
@@ -132,10 +150,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             <span className="font-medium">
               {registeredVersion > 1 ? `Version ${registeredVersion} registered.` : "Registered."}
             </span>{" "}
-            Your record is live at{" "}
+            {registeredAccess === "full" ? "Your record is live at " : "Your record is at "}
             <Link href={`/p/${justRegistered}`} className="font-mono underline underline-offset-4">
               {displayUrl(proofUrl(justRegistered))}
             </Link>
+            {registeredAccess === "embargoed"
+              ? `, sealed until ${formatDateTime(registeredRow!.embargoUntil!)}`
+              : registeredAccess === "private"
+                ? "; only you can see its details"
+                : ""}
             .{" "}
             {registeredVersion > 1
               ? "The earlier version's record now notes that a newer version exists. "
@@ -183,6 +206,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                         <span className="text-right text-sm text-ink-muted">
                           {latest.status === "registered" ? "Registered" : "Withdrawn"}
                           {latest.registeredAt ? ` ${formatDate(latest.registeredAt)}` : ""}
+                          {visibilityNote(latest) ? (
+                            <span className="block text-xs font-medium text-ink">
+                              {visibilityNote(latest)}
+                            </span>
+                          ) : null}
                           <span className="block text-xs">
                             {formatNumber(totals.markClicks)} mark clicks · {formatNumber(totals.pageViews)}{" "}
                             views

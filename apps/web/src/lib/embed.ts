@@ -2,7 +2,12 @@ import { proofUrl } from "./urls";
 
 export type MarkStyle = "badge" | "icon";
 export type MarkTheme = "light" | "dark";
-export type MarkStatus = "registered" | "withdrawn";
+/**
+ * What the mark says about its record: nothing extra while it's registered and
+ * visible, otherwise a muted mark and a word (withdrawn, or why the details
+ * aren't public).
+ */
+export type MarkStatus = "registered" | "withdrawn" | "restricted" | "embargoed" | "private";
 
 export interface EmbedSnippet {
   id: "html" | "icon" | "markdown" | "wordpress" | "text";

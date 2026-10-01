@@ -181,11 +181,22 @@ export const proofRecords = pgTable(
     evidenceDisclosure: evidenceDisclosure().default("standard").notNull(),
     createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
     registeredAt: timestamp({ withTimezone: true }),
+    /**
+     * When anyone but the owner could first see the record's details. Set once
+     * and never cleared: a record that has been published can later be
+     * restricted, but never return to private-from-the-start.
+     */
+    publishedAt: timestamp({ withTimezone: true }),
+    /** A private, never-published record is released to the public at this time. */
+    embargoUntil: timestamp({ withTimezone: true }),
+    /** Whether the embargo notice shows the version's fingerprints before release. */
+    embargoShowsFingerprint: boolean().default(false).notNull(),
     withdrawnAt: timestamp({ withTimezone: true }),
     withdrawnReason: text(),
   },
   (table) => [
     index().on(table.status),
+    index().on(table.embargoUntil),
     check(
       "proof_records_registered_at_present",
       sql`(${table.status} = 'pending_attestation') = (${table.registeredAt} IS NULL)`,
@@ -194,6 +205,12 @@ export const proofRecords = pgTable(
       "proof_records_withdrawn_at_present",
       sql`(${table.status} = 'withdrawn') = (${table.withdrawnAt} IS NOT NULL)`,
     ),
+    // Only a private record that was never published and isn't withdrawn can wait for release.
+    check(
+      "proof_records_embargo_private",
+      sql`${table.embargoUntil} IS NULL OR (${table.visibility} = 'private' AND ${table.publishedAt} IS NULL AND ${table.status} <> 'withdrawn')`,
+    ),
+    // Publication rules that need existing rows backfilled live in 0009_visibility_rules.sql.
   ],
 );
 

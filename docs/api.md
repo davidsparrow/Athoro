@@ -2,14 +2,14 @@
 
 Base URL: `https://authoro.net/api/v1`. All requests and responses are JSON.
 
-| Endpoint                     | Auth    | Purpose                                                                  |
-| ---------------------------- | ------- | ------------------------------------------------------------------------ |
-| `GET /proofs/{id}`           | none    | A public record, with full evidence payloads, hashes and its provenance  |
-| `POST /verify`               | none    | Check hashes against a record, or find records matching hashes           |
-| `POST /works`                | API key | Prepare a registration (the author then attests in person)               |
-| `POST /works/{id}/versions`  | API key | Prepare the next version of a work                                       |
-| `POST /proofs/{id}/evidence` | API key | Add evidence to a registered record (public once the author approves it) |
-| `GET /works`                 | API key | List the key owner's registrations                                       |
+| Endpoint                     | Auth    | Purpose                                                                     |
+| ---------------------------- | ------- | --------------------------------------------------------------------------- |
+| `GET /proofs/{id}`           | none    | A record's evidence, hashes and provenance, as far as its visibility allows |
+| `POST /verify`               | none    | Check hashes against a record, or find records matching hashes              |
+| `POST /works`                | API key | Prepare a registration (the author then attests in person)                  |
+| `POST /works/{id}/versions`  | API key | Prepare the next version of a work                                          |
+| `POST /proofs/{id}/evidence` | API key | Add evidence to a registered record (public once the author approves it)    |
+| `GET /works`                 | API key | List the key owner's registrations                                          |
 
 Looking up and verifying records is free and needs no key. Public endpoints send `Access-Control-Allow-Origin: *`, so any website can call them from the browser. Keyed endpoints are for servers only: never ship an API key to a browser.
 
@@ -46,7 +46,8 @@ Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-R
 | ------ | ----------------------------------------------- | --------------------------------------------------------------------------------- |
 | 400    | `invalid_json`, `invalid_request`, `invalid_id` | Malformed body, failed validation (see `details`), or a bad Authoro ID            |
 | 401    | `unauthorized`                                  | Missing, invalid or revoked API key                                               |
-| 404    | `not_found`                                     | No public record with that ID, or no work with that ID in the key's account       |
+| 403    | `plan_required`                                 | Private, unlisted and embargoed records need Authoro Pro                          |
+| 404    | `not_found`                                     | No record with that ID (drafts included), or no such work in the key's account    |
 | 409    | `profile_required`                              | The key's account hasn't set up an author profile yet                             |
 | 409    | `draft_exists`                                  | The work already has a version waiting for attestation (see `proofId`)            |
 | 409    | `unchanged`                                     | The document is identical to an earlier version of the work (see `proofId`)       |
@@ -87,9 +88,12 @@ IDs are case-insensitive. The response is abridged here:
   "object": "proof",
   "id": "AU-7K3F92",
   "url": "https://authoro.net/p/AU-7K3F92",
+  "access": "full",
   "status": "registered",
   "visibility": "public",
+  "evidenceDisclosure": "standard",
   "registeredAt": "2026-09-30T16:42:17.000Z",
+  "publishedAt": "2026-09-30T16:42:17.000Z",
   "withdrawn": null,
   "work": {
     "id": "AUW-4F8Q2M9C",
@@ -122,12 +126,14 @@ IDs are case-insensitive. The response is abridged here:
       "submittedBy": "author",
       "status": "active",
       "signatureStatus": "unsigned",
+      "signed": false,
       "addedVia": "registration",
       "createdAt": "…",
       "approvedAt": null,
       "revokedAt": null,
       "revocationNote": null,
       "payload": { "schema": "authoro-creation-disclosure/1.1", "methods": ["ai-assisted"], "…": "…" },
+      "payloadWithheld": false,
       "payloadHash": "sha256:…",
       "intact": true
     }
@@ -137,6 +143,7 @@ IDs are case-insensitive. The response is abridged here:
       "id": "AU-7K3F92",
       "number": 1,
       "status": "registered",
+      "visibility": "public",
       "registeredAt": "…",
       "url": "…",
       "sources": [
@@ -191,7 +198,100 @@ IDs are case-insensitive. The response is abridged here:
 }
 ```
 
-`events` is the record's append-only history: `registered`, `newer-version-registered` (with the newer version's `proofId` and `version`), `evidence-added` (with `evidenceId`, `claimType` and `via`: `author` or `api`), `evidence-revoked` (with `evidenceId`, `claimType` and the author's `note`) and `withdrawn` (with the `reason` code and the author's `note`, or `null`). A record with a newer version stays valid; follow `versions` to find the latest. A withdrawn record has `status: "withdrawn"` and a `withdrawn` object with the time and the reason as shown on the record.
+`events` is the record's append-only history:
+
+- `registered`, with the `visibility` and `embargoUntil` chosen at registration (`null` for records registered before chunk 9);
+- `newer-version-registered`, with the newer version's `proofId` (`null` when that version isn't public) and `version`;
+- `evidence-added`, with `evidenceId`, `claimType` and `via` (`author` or `api`);
+- `evidence-revoked`, with `evidenceId`, `claimType` and the author's `note`;
+- `withdrawn`, with the `reason` code and the author's `note`, or `null`;
+- `visibility-changed`, with `from`, `to` and `firstPublished`;
+- `embargo-changed`, with the release time `from` and `to` (`null` when set for the first time, or cancelled) and `fingerprintShown`;
+- `embargo-lifted`, with `scheduledFor`, `early` (`true` when the author released it before then) and `to`;
+- `evidence-disclosure-changed`, with the preset `from` and `to`.
+
+The database writes the last four itself whenever a registered record's visibility, embargo or preset changes, so none can change silently. A record with a newer version stays valid; follow `versions` to find the latest. A withdrawn record has `status: "withdrawn"` and a `withdrawn` object with the time and the reason as shown on the record.
+
+### Visibility and access
+
+`access` says how much of the record you're seeing. `full` is a `public` or `unlisted` record. Unlisted records are served with `X-Robots-Tag: noindex` and aren't listed on author pages or found by fingerprint. A `private` record returns `200` with only what it shows publicly, also with `noindex`:
+
+- **`private`**: private from the start. Only its existence:
+
+  ```json
+  { "object": "proof", "id": "AU-7K3F92", "url": "…", "access": "private", "visibility": "private" }
+  ```
+
+- **`embargoed`**: private until a scheduled release. Its registration time, the release time, how many issuers reported on it and, only if the author allows it, the version's fingerprints (`version` is `null` otherwise):
+
+  ```json
+  {
+    "object": "proof",
+    "id": "AU-7K3F92",
+    "url": "…",
+    "access": "embargoed",
+    "visibility": "private",
+    "status": "registered",
+    "registeredAt": "…",
+    "embargo": { "until": "2026-10-15T09:00:00.000Z", "issuerCount": 1 },
+    "version": null,
+    "events": [{ "type": "registered", "at": "…", "visibility": "private", "embargoUntil": "…" }]
+  }
+  ```
+
+  At the release time the record becomes public on its own: the first read after it, or a daily job, records an `embargo-lifted` event and the record's `publishedAt` is the scheduled time.
+
+- **`restricted`**: once public or unlisted, then made private by its author. Visibility can decrease disclosure but never erase provenance, so it keeps its dates, fingerprints, attestation hash and full history:
+
+  ```json
+  {
+    "object": "proof",
+    "id": "AU-7K3F92",
+    "url": "…",
+    "access": "restricted",
+    "visibility": "private",
+    "status": "registered",
+    "registeredAt": "…",
+    "publishedAt": "…",
+    "restrictedAt": "…",
+    "withdrawn": null,
+    "version": {
+      "number": 1,
+      "contentHash": "sha256:…",
+      "textHash": "sha256:…",
+      "textCanonicalization": "authoro-text/1"
+    },
+    "attestationHash": "sha256:…",
+    "events": [
+      { "type": "registered", "at": "…" },
+      { "type": "visibility-changed", "at": "…", "from": "public", "to": "private", "firstPublished": false }
+    ],
+    "mark": { "svg": "…/mark.svg" }
+  }
+  ```
+
+### Evidence presets
+
+`evidenceDisclosure` is the author's preset: `minimal`, `standard` (the default) or `detailed`. Standard and Detailed only change what the record page shows; the API returns full payloads for both. **Minimal hides content, not verifiability**: each `creation-disclosure` and `proof-envelope` comes with `payload: null`, `payloadWithheld: true` and `publicFields`, while `payloadHash`, `intact`, `signatureStatus`, `signed` and the timestamps stay:
+
+```json
+{
+  "claimType": "proof-envelope",
+  "payload": null,
+  "payloadWithheld": true,
+  "publicFields": {
+    "schema": "authoro-proof/1.1",
+    "issuer": { "id": "issuer:writermark", "name": "Writermark" },
+    "evidence": { "class": "continuous-observed", "method": "continuous-composition" },
+    "timeline": null,
+    "links": [{ "url": "https://writermark.example/reports/7K3F92", "label": "Session report" }]
+  },
+  "payloadHash": "sha256:…",
+  "intact": true
+}
+```
+
+A creation disclosure keeps its `schema`, `methods` and `links`, and hides the note, AI uses and tools. Documentation links stay whole under every preset. Without the payload you can't recompute `intact` yourself; the author can share the full evidence privately, and anyone can check it against the public `payloadHash`. An Authoro-signed manifest of these hashes arrives with Evidence Packs.
 
 ### Evidence and provenance
 
@@ -230,6 +330,7 @@ curl -X POST https://authoro.net/api/v1/verify \
 - The `method` is `exact-bytes` (identical file) or `canonical-text` (same words; formatting may differ).
 - `sameVersion: false` means the copy matches a different version of the same work.
 - An unknown ID returns `{ "proof": null, "valid": false, "match": null }`.
+- For a private record, `proof.access` says what it shows (see [Visibility and access](#visibility-and-access)). Hashes are checked against the fingerprints a restricted record keeps, or an embargoed one shows; otherwise `match` is `null`. A record private from the start gives `valid: null`.
 
 Find records by fingerprint alone:
 
@@ -253,7 +354,7 @@ curl -X POST https://authoro.net/api/v1/verify -H 'Content-Type: application/jso
 }
 ```
 
-Several records can match the same document. Authoro lists who registered each one and when; it doesn't decide between them.
+Several records can match the same document. Authoro lists who registered each one and when; it doesn't decide between them. Only public records are found this way.
 
 ## `POST /works`
 
@@ -303,6 +404,20 @@ curl -X POST https://authoro.net/api/v1/works \
 - **`disclosure.aiUses`:** `brainstorming`, `outlining`, `drafting`, `rewriting`, `editing`, `summarization`, `translation`, `research`, `citations`, `media`. Only allowed alongside an AI method.
 - **`disclosure.links` (optional):** up to five links to the author's own documentation of how the work was made (see [Documentation links](#documentation-links)). They're part of the disclosure the author attests to, shown as "Author supplied".
 - **`envelopes` (optional):** up to five Proof Envelopes (`authoro-proof/1.0` or `1.1`), each an object or a JSON string. Each `work.hash` must match `contentHash` or `textHash`, and each envelope may be attached once. They're shown as evidence submitted by the author and attributed to the tool or organization each names, marked unverified until issuer signatures arrive. A single `envelope` is still accepted; send one or the other.
+- **`record` (optional):** who should see the record once it's registered, which the author confirms or changes when attesting:
+
+  ```json
+  {
+    "record": {
+      "visibility": "private",
+      "embargoUntil": "2026-10-15T09:00:00Z",
+      "showFingerprint": false,
+      "evidenceDisclosure": "minimal"
+    }
+  }
+  ```
+
+  `visibility` is `public` (the default), `unlisted` or `private`. `embargoUntil` schedules a private record's release, at least five minutes and at most ten years ahead, and `showFingerprint` lets the embargo notice show the version's fingerprints. `evidenceDisclosure` is `minimal`, `standard` (the default) or `detailed`. Anything but a public record needs Authoro Pro (`403 plan_required`); making a record public is always free.
 
 ### Documentation links
 
@@ -328,6 +443,12 @@ Response `201`:
   "workId": "AUW-4F8Q2M9C",
   "version": 1,
   "status": "pending_attestation",
+  "record": {
+    "visibility": "public",
+    "embargoUntil": null,
+    "showFingerprint": false,
+    "evidenceDisclosure": "standard"
+  },
   "attestUrl": "https://authoro.net/attest/AU-7K3F92",
   "proofUrl": "https://authoro.net/p/AU-7K3F92",
   "message": "Prepared. The author must open attestUrl, review the details and attest before the record is public."
@@ -347,7 +468,7 @@ curl -X POST https://authoro.net/api/v1/works/AUW-4F8Q2M9C/versions \
   -d @version.json
 ```
 
-The body is the same as for `POST /works`, except that `work` is optional:
+The body is the same as for `POST /works`, including the optional `record`, except that `work` is optional:
 
 ```json
 {
@@ -377,6 +498,12 @@ Response `201`, with `Location` set to `attestUrl`:
   "workId": "AUW-4F8Q2M9C",
   "version": 2,
   "status": "pending_attestation",
+  "record": {
+    "visibility": "public",
+    "embargoUntil": null,
+    "showFingerprint": false,
+    "evidenceDisclosure": "standard"
+  },
   "attestUrl": "https://authoro.net/attest/AU-M4X2Q8",
   "proofUrl": "https://authoro.net/p/AU-M4X2Q8",
   "message": "Prepared version 2. The author must open attestUrl, review the details and attest before the record is public."
