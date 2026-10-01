@@ -1,13 +1,5 @@
 import { relations } from "drizzle-orm";
-import {
-  pgTable,
-  text,
-  bigint,
-  timestamp,
-  boolean,
-  integer,
-  index,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, bigint, timestamp, boolean, integer, index } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -95,10 +87,7 @@ export const twoFactor = pgTable(
     failedVerificationCount: integer("failed_verification_count").default(0),
     lockedUntil: timestamp("locked_until"),
   },
-  (table) => [
-    index("twoFactor_secret_idx").on(table.secret),
-    index("twoFactor_userId_idx").on(table.userId),
-  ],
+  (table) => [index("twoFactor_secret_idx").on(table.secret), index("twoFactor_userId_idx").on(table.userId)],
 );
 
 export const passkey = pgTable(

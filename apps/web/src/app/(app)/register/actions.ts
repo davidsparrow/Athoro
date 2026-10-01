@@ -40,7 +40,7 @@ export async function prepareRegistrationAction(input: unknown): Promise<Prepare
     metadata: {
       workId,
       source: validation.data.document.source,
-      envelope: Boolean(validation.data.envelope),
+      envelopes: validation.data.envelopes.length,
     },
     headers: await headers(),
   });
@@ -83,7 +83,7 @@ export async function prepareVersionAction(workIdInput: string, input: unknown):
       workId,
       versionNumber: prepared.versionNumber,
       source: validation.data.document.source,
-      envelope: Boolean(validation.data.envelope),
+      envelopes: validation.data.envelopes.length,
     },
     headers: await headers(),
   });

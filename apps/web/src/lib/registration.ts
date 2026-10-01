@@ -1,5 +1,6 @@
 import {
   buildAuthorAttestation,
+  CREATION_DISCLOSURE_SCHEMA,
   CURRENT_ATTESTATION_STATEMENT_VERSION,
   generateProofId,
   generateWorkId,
@@ -11,7 +12,7 @@ import {
   type WorkType,
 } from "@authoro/core";
 import { and, desc, eq, inArray, lt, ne, or, sql } from "drizzle-orm";
-import type { Database } from "@/db/client";
+import type { Database, Transaction } from "@/db/client";
 import {
   attestations,
   authorAttestations,
@@ -20,10 +21,9 @@ import {
   works,
   workVersions,
 } from "@/db/schema";
+import { envelopeEvidence } from "./evidence";
 import type { AuthorProfile } from "./profiles";
 import type { ValidRegistration } from "./registration-validation";
-
-export const CREATION_DISCLOSURE_SCHEMA = "authoro-creation-disclosure/1.0";
 
 export type RegistrationErrorCode =
   "not-found" | "not-pending" | "invalid-name" | "draft-exists" | "unchanged" | "not-registered";
@@ -53,8 +53,6 @@ function randomSalt(): string {
   return toHex(bytes);
 }
 
-type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
-
 /** Inserts a pending version with its proof record and author-supplied evidence. */
 async function insertPendingVersion(
   tx: Transaction,
@@ -72,7 +70,7 @@ async function insertPendingVersion(
     registration: ValidRegistration;
   },
 ): Promise<string> {
-  const { work, document, disclosure, envelope } = registration;
+  const { work, document, disclosure, envelopes } = registration;
   const disclosurePayload = { schema: CREATION_DISCLOSURE_SCHEMA, ...disclosure };
   const [version] = await tx
     .insert(workVersions)
@@ -104,17 +102,11 @@ async function insertPendingVersion(
     payload: disclosurePayload,
     payloadHash: await hashCanonicalJson(disclosurePayload),
   });
-  if (envelope) {
+  for (const envelope of envelopes) {
     await tx.insert(attestations).values({
       workVersionId: version!.id,
-      evidenceClass: envelope.evidence.class ?? "self",
-      claimType: "proof-envelope",
       submittedByUserId: userId,
-      payload: envelope,
-      payloadHash: await hashCanonicalJson(envelope),
-      signature: envelope.signature ?? null,
-      // Issuer keys arrive in V1; until then a signature can't be checked.
-      signatureStatus: envelope.signature ? "unverifiable" : "unsigned",
+      ...(await envelopeEvidence(envelope)),
     });
   }
   return record!.publicId;

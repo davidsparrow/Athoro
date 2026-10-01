@@ -54,7 +54,7 @@ export async function authenticateApiKey(db: Database, key: string, now = new Da
     .update(apiKeys)
     .set({ lastUsedAt: now })
     .where(and(eq(apiKeys.keyHash, await hashKey(key)), isNull(apiKeys.revokedAt)))
-    .returning({ id: apiKeys.id, userId: apiKeys.userId, prefix: apiKeys.prefix });
+    .returning({ id: apiKeys.id, userId: apiKeys.userId, name: apiKeys.name, prefix: apiKeys.prefix });
   return record ?? null;
 }
 

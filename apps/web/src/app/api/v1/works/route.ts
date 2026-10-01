@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   return handle(async () => {
     const { key, headers } = await requireApiKey(request);
     const body = await readJson(request, headers);
-    const validation = validateRegistration(registrationInputFromBody(body));
+    const validation = validateRegistration(registrationInputFromBody(body, { headers }));
     if (!validation.ok) {
       return apiError(400, "invalid_request", "The registration is invalid.", {
         headers,
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       action: "registration.prepared",
       targetType: "proof_record",
       targetId: proofId,
-      metadata: { workId, userId: key.userId, envelope: Boolean(validation.data.envelope) },
+      metadata: { workId, userId: key.userId, envelopes: validation.data.envelopes.length },
       headers: request.headers,
     });
 

@@ -1,6 +1,7 @@
 import { fingerprintPastedText } from "@authoro/core";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { POST as addEvidenceRoute } from "@/app/api/v1/proofs/[proofId]/evidence/route";
 import { GET as getProof, OPTIONS as proofOptions } from "@/app/api/v1/proofs/[proofId]/route";
 import { POST as verify } from "@/app/api/v1/verify/route";
 import { POST as createVersion } from "@/app/api/v1/works/[workId]/versions/route";
@@ -8,9 +9,20 @@ import { GET as listWorks, POST as createWork } from "@/app/api/v1/works/route";
 import { apiRateLimits, user } from "@/db/schema";
 import { createApiKey } from "@/lib/api/keys";
 import { PUBLIC_RATE_LIMIT } from "@/lib/api/http";
-import { finalizeRegistration, withdrawRecord } from "@/lib/registration";
+import type { EmailMessage } from "@/lib/email/send";
+import { reviewEvidence } from "@/lib/evidence";
+import { finalizeRegistration, prepareRegistration, withdrawRecord } from "@/lib/registration";
 import { hashIp } from "@/lib/request-ip";
-import { createAuthor, registerWork, sampleInput, testDatabase } from "./helpers";
+import { createAuthor, registerWork, sampleInput, testDatabase, valid } from "./helpers";
+
+const emails = vi.hoisted(() => [] as EmailMessage[]);
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (task: () => unknown) => void task(),
+}));
+vi.mock("@/lib/email/send", () => ({
+  sendEmail: vi.fn(async (message: EmailMessage) => void emails.push(message)),
+}));
 
 const db = testDatabase();
 const BASE = "https://authoro.test";
@@ -30,6 +42,7 @@ describe.skipIf(!db)("API v1", () => {
 
   beforeEach(async () => {
     await d.execute(sql`TRUNCATE "user", api_rate_limits CASCADE`);
+    emails.length = 0;
   });
 
   afterAll(async () => {
@@ -209,6 +222,75 @@ describe.skipIf(!db)("API v1", () => {
       ]);
     });
 
+    it("takes several envelopes and links to documentation", async () => {
+      const author = await createAuthor(d);
+      const key = await keyFor(author.userId);
+      const input = await sampleInput(TEXT);
+      const envelope = (name: string) => ({
+        schema: "authoro-proof/1.1",
+        issuer: { id: `issuer:${name.toLowerCase()}`, name },
+        work: { hash: input.document.contentHash },
+        evidence: { class: "platform-history", method: "revision-history" },
+        links: [
+          {
+            url: `https://${name.toLowerCase()}.example/audit/1`,
+            label: "Audit trail",
+            reportHash: `sha256:${"c".repeat(64)}`,
+          },
+        ],
+      });
+      const body = {
+        ...input,
+        disclosure: { ...input.disclosure, links: [{ url: "https://www.jane.example/process" }] },
+        envelopes: [envelope("Writermark"), JSON.stringify(envelope("Classroom"))],
+      };
+      expect((await post(key, { ...body, envelope: envelope("Writermark") })).status).toBe(400);
+      const created = await post(key, body);
+      expect(created.status).toBe(201);
+      const { proofId } = await created.json();
+      await finalizeRegistration(d, { proofId, userId: author.userId, typedName: "Jane Smith" });
+
+      const proof = await (await getProof(request(`/api/v1/proofs/${proofId}`), proofParams(proofId))).json();
+      expect(proof.evidence.map((e: { claimType: string }) => e.claimType)).toEqual([
+        "creation-disclosure",
+        "proof-envelope",
+        "proof-envelope",
+      ]);
+      expect(proof.evidence[0].payload).toMatchObject({
+        schema: "authoro-creation-disclosure/1.1",
+        links: [{ url: "https://www.jane.example/process" }],
+      });
+      expect(proof.versions[0].sources).toMatchObject([
+        {
+          attribution: "Author supplied",
+          supplier: { type: "author", name: "Jane Smith" },
+          addedVia: "registration",
+          links: [{ url: "https://www.jane.example/process", host: "jane.example", label: null }],
+        },
+        {
+          attribution: "Reported by Writermark",
+          supplier: { type: "issuer", name: "Writermark", id: "issuer:writermark" },
+          class: "platform-history",
+          links: [
+            { host: "writermark.example", label: "Audit trail", reportHash: `sha256:${"c".repeat(64)}` },
+          ],
+        },
+        { attribution: "Reported by Classroom" },
+      ]);
+    });
+
+    it("refuses an envelopes value that isn't a list", async () => {
+      const author = await createAuthor(d);
+      const response = await post(await keyFor(author.userId), {
+        ...(await sampleInput(TEXT)),
+        envelopes: {},
+      });
+      expect(response.status).toBe(400);
+      expect((await response.json()).error.details).toEqual([
+        "envelopes: Expected an array of Proof Envelopes.",
+      ]);
+    });
+
     it("explains validation errors and a missing profile", async () => {
       const author = await createAuthor(d);
       const key = await keyFor(author.userId);
@@ -327,6 +409,143 @@ describe.skipIf(!db)("API v1", () => {
         expect(response.status).toBe(404);
         expect((await response.json()).error.code).toBe("not_found");
       }
+    });
+  });
+
+  describe("POST /api/v1/proofs/{id}/evidence", () => {
+    const post = (key: string | null, proofId: string, body: unknown) =>
+      addEvidenceRoute(
+        request(`/api/v1/proofs/${proofId}/evidence`, {
+          method: "POST",
+          headers: key ? { Authorization: `Bearer ${key}` } : {},
+          body: JSON.stringify(body),
+        }),
+        proofParams(proofId),
+      );
+    const fetchProof = async (proofId: string) =>
+      (await getProof(request(`/api/v1/proofs/${proofId}`), proofParams(proofId))).json();
+
+    async function registered() {
+      const author = await createAuthor(d);
+      const proofId = await registerWork(d, author, TEXT);
+      const { key } = await createApiKey(d, author.userId, "Writermark sync");
+      return { author, proofId, key };
+    }
+
+    async function envelope(text = TEXT) {
+      return {
+        schema: "authoro-proof/1.1",
+        issuer: { id: "issuer:writermark", name: "Writermark" },
+        work: { hash: (await sampleInput(text)).document.contentHash },
+        evidence: { class: "continuous-observed", method: "continuous-composition", sessions: 4 },
+        links: [{ url: "https://writermark.example/sessions/42", label: "Session report" }],
+      };
+    }
+
+    it("requires a key and a record in the key's account", async () => {
+      const { proofId } = await registered();
+      expect((await post(null, proofId, {})).status).toBe(401);
+      const { key: otherKey } = await createApiKey(d, (await createAuthor(d, "other")).userId, "Other");
+      const notMine = await post(otherKey, proofId, { envelope: await envelope() });
+      expect(notMine.status).toBe(404);
+      expect((await notMine.json()).error.code).toBe("not_found");
+      const bad = await post(otherKey, "hello", {});
+      expect((await bad.json()).error.code).toBe("invalid_id");
+    });
+
+    it("holds a submission for the author's approval and emails them", async () => {
+      const { author, proofId, key } = await registered();
+      const response = await post(key, proofId.toLowerCase(), { envelope: await envelope() });
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body).toMatchObject({
+        object: "evidence",
+        proofId,
+        status: "pending_approval",
+        reviewUrl: `${BASE}/p/${proofId}#review`,
+      });
+
+      expect(emails).toHaveLength(1);
+      expect(emails[0]).toMatchObject({
+        subject: "Evidence waiting for your approval: The Future of Independent Software",
+      });
+      expect(emails[0]!.text).toContain("A Proof Envelope from Writermark arrived for version 1");
+      expect(emails[0]!.text).toContain("“Writermark sync”");
+      expect(emails[0]!.text).toContain(`${BASE}/p/${proofId}#review`);
+
+      // Nothing public until the author approves.
+      const before = await fetchProof(proofId);
+      expect(before.evidence).toHaveLength(1);
+      expect(before.versions[0].sources).toHaveLength(1);
+
+      const duplicate = await post(key, proofId, { envelope: await envelope() });
+      expect(duplicate.status).toBe(409);
+      expect((await duplicate.json()).error).toMatchObject({
+        code: "duplicate_evidence",
+        evidenceId: body.id,
+      });
+
+      await reviewEvidence(d, { proofId, evidenceId: body.id, userId: author.userId, decision: "approve" });
+      const after = await fetchProof(proofId);
+      expect(after.evidence[1]).toMatchObject({
+        id: body.id,
+        claimType: "proof-envelope",
+        addedVia: "api",
+        status: "active",
+        intact: true,
+      });
+      expect(after.evidence[1].approvedAt).not.toBeNull();
+      expect(after.versions[0].sources[1]).toMatchObject({
+        attribution: "Reported by Writermark",
+        addedVia: "api",
+        links: [{ host: "writermark.example", label: "Session report" }],
+      });
+      expect(after.events.at(-1)).toMatchObject({
+        type: "evidence-added",
+        evidenceId: body.id,
+        claimType: "proof-envelope",
+        via: "api",
+      });
+    });
+
+    it("validates submissions against the version", async () => {
+      const { proofId, key } = await registered();
+      const details = async (body: unknown) => {
+        const response = await post(key, proofId, body);
+        expect(response.status).toBe(400);
+        return (await response.json()).error.details as string[];
+      };
+      expect(await details({})).toEqual([
+        "Send links to your documentation, or an envelope (a Proof Envelope).",
+      ]);
+      expect((await details({ envelope: await envelope("Another essay.") }))[0]).toContain(
+        "different document",
+      );
+      expect((await details({ links: [{ url: "http://jane.example/notes" }] }))[0]).toMatch(
+        /^links\.0\.url: /,
+      );
+
+      const links = await post(key, proofId, { links: [{ url: "https://jane.example/notes" }] });
+      expect(links.status).toBe(201);
+      expect(emails.at(-1)!.text).toContain("Links to documentation arrived");
+    });
+
+    it("409s for drafts and withdrawn records", async () => {
+      const { author, proofId, key } = await registered();
+      const { proofId: draftId } = await prepareRegistration(d, {
+        userId: author.userId,
+        profile: author.profile,
+        registration: valid(await sampleInput("A draft.")),
+      });
+      const draft = await post(key, draftId, { links: [{ url: "https://jane.example/notes" }] });
+      expect(draft.status).toBe(409);
+      expect((await draft.json()).error.code).toBe("not_registered");
+
+      await withdrawRecord(d, { proofId, userId: author.userId, reason: "author-request" });
+      const withdrawn = await post(key, proofId, { links: [{ url: "https://jane.example/notes" }] });
+      expect(withdrawn.status).toBe(409);
+      expect((await withdrawn.json()).error.code).toBe("not_registered");
+      expect(emails).toHaveLength(0);
     });
   });
 });

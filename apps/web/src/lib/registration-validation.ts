@@ -1,11 +1,11 @@
 import {
   creationDisclosureSchema,
   hashStringSchema,
-  parseProofEnvelope,
   workTypeSchema,
   type ProofEnvelope,
 } from "@authoro/core";
 import { z } from "zod";
+import { checkEnvelopes, MAX_ENVELOPES } from "./evidence-validation";
 
 /** Browsers hash whole files in memory, so V0 caps documents at 100 MB. */
 export const MAX_DOCUMENT_BYTES = 100 * 1024 * 1024;
@@ -50,18 +50,23 @@ export const registrationInputSchema = z.object({
   work: workDetailsSchema,
   document: documentFingerprintSchema,
   disclosure: creationDisclosureSchema,
-  /** Optional Proof Envelope JSON supplied by the author. */
-  envelopeJson: z.string().max(70_000).optional(),
+  /** Proof Envelopes supplied by the author, as JSON text. Blank entries are ignored. */
+  envelopesJson: z
+    .array(z.string().max(70_000))
+    .max(MAX_ENVELOPES, `Attach at most ${MAX_ENVELOPES} evidence envelopes.`)
+    .default([]),
 });
 
 export type RegistrationInput = z.input<typeof registrationInputSchema>;
-export type ValidRegistration = z.output<typeof registrationInputSchema> & { envelope: ProofEnvelope | null };
+export type ValidRegistration = Omit<z.output<typeof registrationInputSchema>, "envelopesJson"> & {
+  envelopes: ProofEnvelope[];
+};
 
 export type RegistrationValidation = { ok: true; data: ValidRegistration } | { ok: false; errors: string[] };
 
 /**
- * Validates a registration, including that an attached envelope describes the
- * same document the author fingerprinted.
+ * Validates a registration, including that each attached envelope describes
+ * the same document the author fingerprinted.
  */
 export function validateRegistration(input: unknown): RegistrationValidation {
   const parsed = registrationInputSchema.safeParse(input);
@@ -74,23 +79,9 @@ export function validateRegistration(input: unknown): RegistrationValidation {
     };
   }
 
-  const envelopeText = parsed.data.envelopeJson?.trim();
-  if (!envelopeText) return { ok: true, data: { ...parsed.data, envelope: null } };
-
-  const envelopeResult = parseProofEnvelope(envelopeText);
-  if (!envelopeResult.ok) {
-    return { ok: false, errors: envelopeResult.errors.map((error) => `Evidence envelope: ${error}`) };
-  }
-  const { envelope } = envelopeResult;
-  const { contentHash, textHash } = parsed.data.document;
-  const matches =
-    envelope.work.hash === contentHash ||
-    (textHash !== null && (envelope.work.hash === textHash || envelope.work.textHash === textHash));
-  if (!matches) {
-    return {
-      ok: false,
-      errors: ["Evidence envelope: it describes a different document (its work.hash doesn't match yours)."],
-    };
-  }
-  return { ok: true, data: { ...parsed.data, envelope } };
+  const { envelopesJson, ...data } = parsed.data;
+  const texts = envelopesJson.map((text) => text.trim()).filter(Boolean);
+  const envelopes = checkEnvelopes(texts, data.document);
+  if (!envelopes.ok) return { ok: false, errors: envelopes.errors };
+  return { ok: true, data: { ...data, envelopes: envelopes.envelopes } };
 }

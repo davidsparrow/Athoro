@@ -27,10 +27,13 @@ export async function POST(request: Request, { params }: RouteContext<"/api/v1/w
 
     const { work, latest } = found;
     const input = registrationInputFromBody(body, {
-      title: latest?.title,
-      canonicalUrl: latest?.canonicalUrl ?? "",
-      description: latest?.description ?? "",
-      workType: work.workType,
+      headers,
+      workDefaults: {
+        title: latest?.title,
+        canonicalUrl: latest?.canonicalUrl ?? "",
+        description: latest?.description ?? "",
+        workType: work.workType,
+      },
     });
     if (input.work.workType !== work.workType) {
       return apiError(400, "invalid_request", "The registration is invalid.", {
@@ -87,7 +90,12 @@ export async function POST(request: Request, { params }: RouteContext<"/api/v1/w
       action: "registration.prepared",
       targetType: "proof_record",
       targetId: proofId,
-      metadata: { workId, versionNumber, userId: key.userId, envelope: Boolean(validation.data.envelope) },
+      metadata: {
+        workId,
+        versionNumber,
+        userId: key.userId,
+        envelopes: validation.data.envelopes.length,
+      },
       headers: request.headers,
     });
 

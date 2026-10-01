@@ -18,23 +18,13 @@ import {
   type SecurityEvent,
 } from "@/lib/auth-security";
 import { generateBackupCodes } from "@/lib/backup-codes";
-import { sendEmail, type EmailMessage } from "@/lib/email/send";
+import { sendLater } from "@/lib/email/later";
 import {
   magicLinkEmail,
   resetPasswordEmail,
   securityNoticeEmail,
   verificationEmail,
 } from "@/lib/email/templates";
-
-/**
- * Sends after the response so response timing doesn't reveal whether an
- * address has an account.
- */
-function sendLater(message: EmailMessage) {
-  after(() =>
-    sendEmail(message).catch((error) => console.error("Failed to send email", message.subject, error)),
-  );
-}
 
 function requestHeaders(context: { headers?: Headers; request?: Request } | null | undefined) {
   return context?.headers ?? context?.request?.headers ?? null;

@@ -26,6 +26,10 @@ export type ApiErrorCode =
   | "profile_required"
   | "draft_exists"
   | "unchanged"
+  | "not_registered"
+  | "duplicate_evidence"
+  | "pending_limit"
+  | "evidence_limit"
   | "payload_too_large";
 
 export function json(data: unknown, init: { status?: number; headers?: HeadersInit } = {}): Response {
@@ -38,8 +42,8 @@ export function apiError(
   status: number,
   code: ApiErrorCode,
   message: string,
-  /** `proofId` names the record behind a conflict. */
-  extra: { details?: string[]; proofId?: string; headers?: HeadersInit } = {},
+  /** `proofId` names the record behind a conflict, `evidenceId` the evidence. */
+  extra: { details?: string[]; proofId?: string; evidenceId?: string; headers?: HeadersInit } = {},
 ): Response {
   return json(
     {
@@ -48,6 +52,7 @@ export function apiError(
         message,
         ...(extra.details?.length ? { details: extra.details } : {}),
         ...(extra.proofId ? { proofId: extra.proofId } : {}),
+        ...(extra.evidenceId ? { evidenceId: extra.evidenceId } : {}),
       },
     },
     { status, headers: extra.headers },
