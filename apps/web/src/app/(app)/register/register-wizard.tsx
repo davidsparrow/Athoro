@@ -18,6 +18,7 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from "reac
 import {
   describeLinkError,
   emptyLink,
+  incompleteLinkErrors,
   LinksEditor,
   linksFromDrafts,
   type LinkDraft,
@@ -207,6 +208,8 @@ export function RegisterWizard({ byline, newVersion }: { byline: string; newVers
       }
     }
     if (step === 2) {
+      const incomplete = incompleteLinkErrors(links);
+      if (incomplete.length) return setErrors(incomplete);
       const input = buildInput();
       const validation = input ? validateRegistration(input) : null;
       if (validation && !validation.ok) {

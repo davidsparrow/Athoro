@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import {
   describeLinkError,
   emptyLink,
+  incompleteLinkErrors,
   LinksEditor,
   linksFromDrafts,
   type LinkDraft,
@@ -25,6 +26,8 @@ export function AddEvidenceForm({ proofId }: { proofId: string }) {
   function submit(event: React.FormEvent) {
     event.preventDefault();
     setErrors([]);
+    const incomplete = kind === "links" ? incompleteLinkErrors(links) : [];
+    if (incomplete.length) return setErrors(incomplete);
     startTransition(async () => {
       const result = await addEvidenceAction(
         proofId,

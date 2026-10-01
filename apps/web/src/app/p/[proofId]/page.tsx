@@ -186,9 +186,10 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
           <p className="text-xs font-medium tracking-wide text-accent uppercase">Only you can see this</p>
           <h2 className="mt-2 font-serif text-2xl">Waiting for your approval</h2>
           <p className="mt-1 text-sm text-ink-muted">
-            {pendingEvidence.length === 1 ? "This was" : "These were"} sent with one of your API keys. Nothing
-            appears on the record until you approve it. Approved evidence is shown as added after your
-            attestation; declining is final and nothing is shown.
+            {pendingEvidence.length === 1 ? "This was" : "These were"} sent with one of your API keys.{" "}
+            {record.status === "registered"
+              ? "Nothing appears on the record until you approve it. Approved evidence is shown as added after your attestation; declining is final and nothing is shown."
+              : "This record is withdrawn and final, so nothing more can be added to it. Decline to clear this list."}
           </p>
           <div className="mt-5 space-y-4">
             {pendingEvidence.map((item) => {
@@ -212,9 +213,13 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
                       Not public
                     </span>
                   </div>
-                  {envelope ? <Rows rows={[["Method", humanize(envelope.evidence.method)]]} /> : null}
+                  {envelope ? <Rows rows={envelopeRows(envelope, true)} /> : null}
                   <DocumentationLinks links={source.links} supplier={source.supplier.name} />
-                  <ReviewEvidence proofId={proofId} evidenceId={item.id} />
+                  <ReviewEvidence
+                    proofId={proofId}
+                    evidenceId={item.id}
+                    canApprove={record.status === "registered"}
+                  />
                 </div>
               );
             })}
@@ -651,6 +656,33 @@ function EvidenceCard(props: {
 
 type EvidenceItem = PublicProof["evidence"][number];
 
+/** An envelope's method, period and, unless the record is minimal, its provider-specific details. */
+function envelopeRows(envelope: ProofEnvelope, detailed: boolean): ([string, ReactNode] | null)[] {
+  const details = Object.entries(envelope.evidence)
+    .filter(
+      ([key, value]) =>
+        key !== "class" && key !== "method" && ["string", "number", "boolean"].includes(typeof value),
+    )
+    .map(([key, value]): [string, ReactNode] => [
+      humanize(key),
+      typeof value === "number" ? formatNumber(value) : String(value),
+    ]);
+  const { startedAt, completedAt } = envelope.timeline ?? {};
+  return [
+    ["Method", humanize(envelope.evidence.method)],
+    startedAt || completedAt
+      ? [
+          "Period",
+          [startedAt, completedAt]
+            .filter(Boolean)
+            .map((t) => formatDate(t!))
+            .join(" – "),
+        ]
+      : null,
+    ...(detailed ? details : []),
+  ];
+}
+
 /** A Proof Envelope, attributed to the organization it names. */
 function EnvelopeCard({
   item,
@@ -664,15 +696,6 @@ function EnvelopeCard({
   footer?: ReactNode;
 }) {
   const envelope = item.payload as ProofEnvelope;
-  const detailRows = Object.entries(envelope.evidence)
-    .filter(
-      ([key, value]) =>
-        key !== "class" && key !== "method" && ["string", "number", "boolean"].includes(typeof value),
-    )
-    .map(([key, value]): [string, ReactNode] => [
-      humanize(key),
-      typeof value === "number" ? formatNumber(value) : String(value),
-    ]);
   return (
     <EvidenceCard
       title={`Reported by ${envelope.issuer.name}`}
@@ -681,21 +704,7 @@ function EnvelopeCard({
       revoked={item.status === "revoked" ? item.revokedAt : null}
       revocationNote={item.revocationReason}
     >
-      <Rows
-        rows={[
-          ["Method", humanize(envelope.evidence.method)],
-          envelope.timeline?.startedAt || envelope.timeline?.completedAt
-            ? [
-                "Period",
-                [envelope.timeline.startedAt, envelope.timeline.completedAt]
-                  .filter(Boolean)
-                  .map((t) => formatDate(t!))
-                  .join(" – "),
-              ]
-            : null,
-          ...(detailed ? detailRows : []),
-        ]}
-      />
+      <Rows rows={envelopeRows(envelope, detailed)} />
       <DocumentationLinks links={shownLinks(envelope)} supplier={envelope.issuer.name} />
       <p className="mt-4 text-xs text-ink-muted">
         {envelope.issuer.name}&apos;s signature{" "}

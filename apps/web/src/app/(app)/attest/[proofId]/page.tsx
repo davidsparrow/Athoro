@@ -130,7 +130,10 @@ export default async function AttestPage({ params }: PageProps<"/attest/[proofId
                 ["Note", described.note],
               ]}
             />
-            <DocumentationLinks links={shownLinks(disclosure?.payload)} supplier={version.authorDisplayName} />
+            <DocumentationLinks
+              links={shownLinks(disclosure?.payload)}
+              supplier={version.authorDisplayName}
+            />
           </Card>
         ) : null}
 

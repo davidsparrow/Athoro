@@ -48,13 +48,13 @@ Files must be valid UTF-8 (a BOM is allowed) to receive a `textHash`.
 
 A text match means the words and punctuation are the same and in the same order. It ignores layout and typography, which editors and CMSs change freely. Changes to these rules require a new identifier (`authoro-text/2`).
 
-## Proof Envelope (`authoro-proof/1.0`)
+## Proof Envelope (`authoro-proof/1.1`)
 
 The normalized package evidence providers submit. Only `schema`, `issuer`, `work.hash` and `evidence.method` are required, and providers may add fields to `evidence`:
 
 ```json
 {
-  "schema": "authoro-proof/1.0",
+  "schema": "authoro-proof/1.1",
   "issuer": { "id": "issuer:writermark", "name": "Writermark" },
   "work": { "title": "Example Article", "hash": "sha256:…", "mediaType": "text/html" },
   "author": { "displayName": "Jane Smith" },
@@ -65,11 +65,30 @@ The normalized package evidence providers submit. Only `schema`, `issuer`, `work
     "manualCharacters": 12540,
     "pastedCharacters": 922
   },
+  "links": [
+    {
+      "url": "https://writermark.example/reports/7K3F92",
+      "label": "Session report",
+      "reportHash": "sha256:…"
+    }
+  ],
   "signature": "…"
 }
 ```
 
 Evidence classes: `continuous-observed` (A), `platform-history` (B), `publisher` (C), `identity` (D), `ai` (E), `self` (F, shown as "Author supplied"). Signature verification arrives with issuer keys in V1. Until then, envelopes are displayed as unverified claims attributed to their named issuer.
+
+`authoro-proof/1.0` is the same without `links` and stays valid. A 1.0 envelope that carries `links` is rejected rather than silently stripped.
+
+## Documentation links
+
+A submitter's links to their own documentation or audit trail for a work: in a Proof Envelope (1.1), in the creation disclosure (`authoro-creation-disclosure/1.1`), or added after registration (`authoro-documentation/1.0`, `{ "links": [...] }`). Links sit inside the hashed evidence, so they can't be swapped later.
+
+- `url`: `https://` only, on a public domain (no IP addresses or single-label hosts), without credentials, whitespace or control and bidirectional characters, at most 2,000 characters.
+- `label` (optional): up to 80 characters, e.g. "Revision history".
+- `reportHash` (optional): the SHA-256 of an exported report (`sha256:<hex>`), so a reader can check a downloaded copy.
+
+At most five links per piece of evidence, each URL once. `parseDocumentationUrl` applies these rules; `linkHost` gives the host readers see ("Documentation hosted by writermark.example"), keeping internationalized names in punycode so look-alike characters can't impersonate another domain. Authoro never fetches, stores or monitors linked documentation.
 
 ## Author attestation (`authoro-author-attestation/1.0`)
 

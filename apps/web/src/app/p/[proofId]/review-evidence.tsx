@@ -5,7 +5,16 @@ import { Alert, Button } from "@/components/ui";
 import { reviewEvidenceAction } from "./evidence-actions";
 
 /** Approve or decline one submission. Declining is final, so it asks first. */
-export function ReviewEvidence({ proofId, evidenceId }: { proofId: string; evidenceId: string }) {
+export function ReviewEvidence({
+  proofId,
+  evidenceId,
+  canApprove,
+}: {
+  proofId: string;
+  evidenceId: string;
+  /** Withdrawn records are final, so their submissions can only be declined. */
+  canApprove: boolean;
+}) {
   const [confirmingDecline, setConfirmingDecline] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -32,9 +41,11 @@ export function ReviewEvidence({ proofId, evidenceId }: { proofId: string; evide
         </div>
       ) : (
         <div className="flex flex-wrap gap-3">
-          <Button className="h-9" disabled={pending} onClick={() => decide("approve")}>
-            {pending ? "Approving…" : "Approve and publish"}
-          </Button>
+          {canApprove ? (
+            <Button className="h-9" disabled={pending} onClick={() => decide("approve")}>
+              {pending ? "Approving…" : "Approve and publish"}
+            </Button>
+          ) : null}
           <Button variant="secondary" className="h-9" onClick={() => setConfirmingDecline(true)}>
             Decline…
           </Button>

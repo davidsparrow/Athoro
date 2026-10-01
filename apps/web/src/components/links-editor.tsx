@@ -27,6 +27,15 @@ export function linksFromDrafts(drafts: LinkDraft[]): DocumentationLink[] {
     }));
 }
 
+/** Rows with a label or report fingerprint but no address, which would otherwise be dropped. */
+export function incompleteLinkErrors(drafts: LinkDraft[]): string[] {
+  return drafts.flatMap((draft, index) =>
+    !draft.url.trim() && (draft.label.trim() || draft.reportHash)
+      ? [`Link ${index + 1}: Add its address, or remove it.`]
+      : [],
+  );
+}
+
 /** Rewrites "links.1.url: …" validation errors as "Link 2: …". */
 export function describeLinkError(error: string): string {
   return error.replace(

@@ -6,14 +6,14 @@ Authoro verifies claims. It doesn't manufacture certainty: it never labels a wor
 
 ## Status
 
-**V0, the public registry loop**, is complete: register → fingerprint → attest → mark → resolve, plus new versions, withdrawal and public author pages. Progress and the chunk plan are in [`docs/roadmap.md`](./docs/roadmap.md), and design decisions are logged in [`docs/decisions.md`](./docs/decisions.md).
+**V0, the public registry loop**, is complete: register → fingerprint → attest → mark → resolve, plus new versions, withdrawal and public author pages. Since then: passkeys and two-step verification, and multi-source provenance (documentation links, several Proof Envelopes per version, and evidence appended after registration with the author's approval). Progress and the chunk plan are in [`docs/roadmap.md`](./docs/roadmap.md), and design decisions are logged in [`docs/decisions.md`](./docs/decisions.md).
 
 ## Repository layout
 
-| Path                               | What                                                                                                                                                            | License    |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| [`packages/core`](./packages/core) | `@authoro/core`: Authoro IDs, document fingerprints (`authoro-text/1`), Proof Envelope schema, attestation primitives, verification. Runs in browsers and Node. | Apache-2.0 |
-| [`apps/web`](./apps/web)           | The registry: a Next.js app with a Postgres database (Drizzle ORM) and Better Auth.                                                                             | AGPL-3.0   |
+| Path                               | What                                                                                                                                                                                    | License    |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| [`packages/core`](./packages/core) | `@authoro/core`: Authoro IDs, document fingerprints (`authoro-text/1`), Proof Envelope and documentation link schemas, attestation primitives, verification. Runs in browsers and Node. | Apache-2.0 |
+| [`apps/web`](./apps/web)           | The registry: a Next.js app with a Postgres database (Drizzle ORM) and Better Auth.                                                                                                     | AGPL-3.0   |
 
 ## Getting started
 
