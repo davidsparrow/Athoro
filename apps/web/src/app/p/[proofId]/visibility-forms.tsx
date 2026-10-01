@@ -32,7 +32,7 @@ export function AccessForm({
   return (
     <form action={formAction} className="mt-4 space-y-4">
       <Feedback state={state} />
-      <AccessFields key={key} {...fields} />
+      <AccessFields key={key} {...fields} hideLegend />
       <Button type="submit" variant="secondary" disabled={pending}>
         {pending ? "Saving…" : "Save visibility"}
       </Button>
@@ -48,7 +48,7 @@ export function PresetForm({ proofId, defaultPreset }: { proofId: string; defaul
   return (
     <form action={formAction} className="mt-4 space-y-4">
       <Feedback state={state} />
-      <PresetFields key={defaultPreset} defaultPreset={defaultPreset} />
+      <PresetFields key={defaultPreset} defaultPreset={defaultPreset} hideLegend />
       <Button type="submit" variant="secondary" disabled={pending}>
         {pending ? "Saving…" : "Save evidence detail"}
       </Button>

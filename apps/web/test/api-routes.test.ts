@@ -1,6 +1,7 @@
 import { fingerprintPastedText } from "@authoro/core";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { GET as releaseEmbargoes } from "@/app/api/cron/embargoes/route";
 import { POST as addEvidenceRoute } from "@/app/api/v1/proofs/[proofId]/evidence/route";
 import { GET as getProof, OPTIONS as proofOptions } from "@/app/api/v1/proofs/[proofId]/route";
 import { POST as verify } from "@/app/api/v1/verify/route";
@@ -262,6 +263,28 @@ describe.skipIf(!db)("API v1", () => {
         valid: true,
         match: { matched: true, method: "exact-bytes", sameVersion: true },
       });
+    });
+
+    it("releases due embargoes from the cron and emails their authors", async () => {
+      const { proofId } = await registerWith({
+        visibility: "private",
+        embargoUntil: new Date(Date.now() + 10 * 60_000),
+        embargoShowsFingerprint: false,
+      });
+      // Pretend the release time has passed.
+      await d.execute(
+        sql`update proof_records set embargo_until = registered_at where public_id = ${proofId}`,
+      );
+      const cron = (authorization?: string) =>
+        releaseEmbargoes(request("/api/cron/embargoes", { headers: authorization ? { authorization } : {} }));
+      expect((await cron("Bearer whatever")).status).toBe(404);
+      vi.stubEnv("CRON_SECRET", "cron-secret-for-tests");
+      expect((await cron("Bearer wrong")).status).toBe(404);
+      const response = await cron("Bearer cron-secret-for-tests");
+      expect(await response.json()).toEqual({ released: [proofId] });
+      expect(emails).toMatchObject([{ subject: "Now public: The Future of Independent Software" }]);
+      expect((await (await get(proofId)).json()).access).toBe("full");
+      expect(await (await cron("Bearer cron-secret-for-tests")).json()).toEqual({ released: [] });
     });
 
     it("doesn't name a newer version visitors can't see", async () => {

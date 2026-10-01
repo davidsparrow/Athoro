@@ -241,7 +241,7 @@ describe.skipIf(!db)("record visibility", () => {
       "embargo-lifted",
     ]);
     expect(history[1]).toMatchObject({ actor: userId, fingerprintShown: false });
-    expect(new Date(history[1]!.to as string)).toEqual(extended);
+    expect(new Date((history[1] as { to?: string }).to!)).toEqual(extended);
     expect(history[2]).toMatchObject({ fingerprintShown: true });
     expect(history[3]).toMatchObject({ early: true, to: "public", actor: userId });
     const published = await record(proofId);
@@ -354,13 +354,14 @@ describe.skipIf(!db)("record visibility", () => {
       embargoUntil: null,
       embargoShowsFingerprint: false,
     });
-    const [{ workId }] = await d.execute<{ workId: string }>(
+    const [row] = await d.execute<{ workId: string }>(
       sql`select w.public_id as "workId" from works w where w.owner_id = ${author.userId}`,
     );
+    const workId = row!.workId;
     const { proofId: v2 } = await prepareVersion(d, {
       userId: author.userId,
       profile: author.profile,
-      workPublicId: workId!,
+      workPublicId: workId,
       registration: valid(await sampleInput("The second version.")),
     });
     await finalizeRegistration(d, {

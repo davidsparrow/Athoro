@@ -88,7 +88,10 @@ export function AccessFields({
   defaultShowFingerprint,
   canUsePro,
   publishedAt,
+  hideLegend = false,
 }: {
+  /** When a heading above already says what the fields are for. */
+  hideLegend?: boolean;
   defaultVisibility: Visibility;
   defaultEmbargoUntil: string | null;
   defaultShowFingerprint: boolean;
@@ -111,7 +114,7 @@ export function AccessFields({
 
   return (
     <fieldset className="space-y-3">
-      <legend className="mb-3 text-sm font-medium">Who can see this record</legend>
+      <legend className={hideLegend ? "sr-only" : "mb-3 text-sm font-medium"}>Who can see this record</legend>
       {(Object.keys(VISIBILITIES) as Visibility[]).map((value) => {
         const restricted = value === "private" && published;
         const locked = value !== "public" && !canUsePro && value !== defaultVisibility;
@@ -231,11 +234,19 @@ export function AccessFields({
 }
 
 /** How much evidence detail the record shows. Free; Minimal hides content, not verifiability. */
-export function PresetFields({ defaultPreset }: { defaultPreset: EvidencePreset }) {
+export function PresetFields({
+  defaultPreset,
+  hideLegend = false,
+}: {
+  defaultPreset: EvidencePreset;
+  hideLegend?: boolean;
+}) {
   const [preset, setPreset] = useState<EvidencePreset>(defaultPreset);
   return (
     <fieldset className="space-y-3">
-      <legend className="mb-3 text-sm font-medium">How much evidence detail it shows</legend>
+      <legend className={hideLegend ? "sr-only" : "mb-3 text-sm font-medium"}>
+        How much evidence detail it shows
+      </legend>
       {(Object.keys(EVIDENCE_PRESETS) as EvidencePreset[]).map((value) => (
         <Choice
           key={value}

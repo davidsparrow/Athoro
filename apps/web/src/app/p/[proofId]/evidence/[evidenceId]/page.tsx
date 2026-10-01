@@ -153,7 +153,9 @@ export default async function EvidencePage({ params }: PageProps<"/p/[proofId]/e
                 "Claim",
                 envelope
                   ? EVIDENCE_CLASSES[item.evidenceClass].label
-                  : titleFor(item.claimType, item.payload),
+                  : disclosure
+                    ? "Creation disclosure"
+                    : "Documentation links",
               ],
               [
                 "Supplied by",
@@ -229,9 +231,12 @@ export default async function EvidencePage({ params }: PageProps<"/p/[proofId]/e
             {envelope ? <Rows rows={envelopeRows(envelope, "detailed")} /> : null}
             {disclosure ? <DisclosureRows disclosure={disclosure} /> : null}
             <details className="mt-6 rounded-xl border border-line bg-paper-raised p-5 text-sm">
-              <summary className="cursor-pointer font-medium">The evidence as submitted (JSON)</summary>
-              <pre className="mt-4 max-h-96 overflow-auto rounded-lg bg-paper-sunken p-4 font-mono text-xs leading-relaxed">
-                {JSON.stringify(item.payload, null, 2)}
+              <summary className="cursor-pointer font-medium">The evidence as stored (JSON)</summary>
+              <p className="mt-3 text-ink-muted">
+                Keys are sorted, as they are when the hash is computed (RFC 8785 canonical JSON).
+              </p>
+              <pre className="mt-3 max-h-96 overflow-auto rounded-lg bg-paper-sunken p-4 font-mono text-xs leading-relaxed">
+                {JSON.stringify(sortKeys(item.payload), null, 2)}
               </pre>
               <RecomputeHash payload={item.payload} expected={item.payloadHash} />
             </details>
@@ -264,9 +269,10 @@ export default async function EvidencePage({ params }: PageProps<"/p/[proofId]/e
       ) : null}
 
       <p className="mt-12 text-sm leading-relaxed text-ink-muted">
-        Authoro shows this evidence as it was submitted and checks that it hasn&apos;t changed. It
-        doesn&apos;t confirm the claim itself: {envelope ? envelope.issuer.name : author.displayName} is
-        responsible for what it says.{" "}
+        Authoro shows this evidence
+        {showsContents ? " as it was submitted" : ", as far as the author's preset allows,"} and checks that
+        it hasn&apos;t changed. It doesn&apos;t confirm the claim itself:{" "}
+        {envelope ? envelope.issuer.name : author.displayName} is responsible for what it says.{" "}
         <a href={`/api/v1/proofs/${proofId}`} className="underline underline-offset-4 hover:text-ink">
           The record as JSON
         </a>{" "}
@@ -297,5 +303,16 @@ function DisclosureRows({ disclosure }: { disclosure: DisclosurePayload }): Reac
         </blockquote>
       ) : null}
     </>
+  );
+}
+
+/** A JSON value with object keys in sorted order, as canonical JSON hashes it. */
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => [key, sortKeys((value as Record<string, unknown>)[key])]),
   );
 }
