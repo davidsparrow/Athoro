@@ -138,3 +138,25 @@ Author attestation payloads (`authoro-author-attestation/1.0`) carry `author`, t
 - **Confirming additions.** A checkbox rather than a retyped name: the attestation is unchanged, and each addition is dated and listed under "Added after registration".
 - **Provenance history.** A record with several versions lists each public version with its sources and links, oldest first, and `GET /proofs/{id}` returns the same as `versions[].sources`. Private versions are left out for readers.
 - **Refreshing in place.** Record actions call `refresh()` instead of redirecting to the same path, which Next ignores when the URL has a fragment, such as an email's `#review` or the dashboard's `#embed`.
+
+## 024: Minimal hides content, not verifiability
+
+**Decided:** 2026-10-01, with the product owner. See PRD §8.
+
+- **Two rules** govern every visibility and disclosure choice: _visibility can decrease disclosure, but never erase provenance_, and _Minimal hides content, not verifiability_.
+- **The Minimal evidence preset** hides raw envelope details, detailed telemetry and statistics, the author's note (and AI uses and tools), and the raw event history. It keeps issuer names ("Reported by X"), verification and documentation links, the document hash and integrity status, and correction, revocation, withdrawal and dispute status. The record's own history (registration, versions, evidence added or revoked, withdrawal, visibility and preset changes) is provenance, so it stays; the raw event history Minimal hides is creation-process detail such as editing sessions inside an envelope.
+- **Links stay visible.** Documentation links (issuer docs, methodology pages, registry records, source attestations) are provenance, so Minimal keeps them. Links that expose private drafts, replay data, deleted text or personal information should obey the preset, but nothing tells the two kinds apart yet, so every link is treated as documentation and stays public until V1.
+- **The API follows the page.** Under Minimal, `GET /api/v1/proofs/{id}` withholds each evidence payload's body but keeps its hash, issuer, schema, signature metadata, timestamps and verification status, so a reader can confirm an evidence object is unchanged without learning its contents. An Authoro-signed digest manifest (with the Evidence Pack's signing key, chunk 12) will let readers check those hashes against something other than Authoro's live answer.
+- **Wording.** Third-party claims are "Reported by X", and Authoro's own checks are separate, narrow statements ("Signature valid", "Issuer verified", "Document hash matches"), so Authoro never adopts an issuer's substantive claim as its own.
+- **"View source evidence"** opens an Authoro evidence page (issuer, claim type, timestamps, signature and integrity status, the record's preset, the evidence hash and the fields the preset allows), never a third-party URL directly. The source's own links are offered from there.
+
+## 025: V0.5 plans and order
+
+**Decided:** 2026-10-01, with the product owner. See PRD §51.
+
+- **Free** keeps the registry generous: public records, the Authoro ID, self-attestation, the standard mark, verification, basic versioning, the basic profile, all three evidence presets, and up to 60 active works and 60 drafts. An active work has a registered version that isn't withdrawn; a draft is a registration awaiting attestation, including one an integration prepared. The limit only stops new works: new versions are always free, and withdrawing a work frees its slot.
+- **Pro** (about $8 a month or $80 a year, priced in Stripe): unlimited works, private, unlisted and embargoed records, domain verification, Evidence Packs and richer versioning, with Identity Verified eligibility, MCP automation and originality credits as they arrive. **Protect** (about $25 a month) and one-time human Name Checks come later.
+- **A lapsed plan never hides, deletes or publishes anything.** Private records stay private and scheduled embargoes still lift; only new Pro actions are unavailable. Making a record more public is always free.
+- **Order:** chunk 9 visibility and presets, 10 plans and billing, 11 domain verification, 12 Evidence Packs, 13 version management (a work page with a latest-version link and mark, metadata corrections, version labels and change notes, and version comparison). Pro features ship behind an entitlement check first; until billing lands, `AUTHORO_ALL_PRO=true` grants them (development and self-hosting).
+- **Domain verification** will use a DNS TXT record by default, with an HTML file or meta tag for people who can't edit DNS (not email). Verified domains are re-checked weekly. A failing domain gets 7 days' grace with daily re-checks and an email, then shows its verified period ("Verified Jan 3 – Mar 9, 2027") rather than disappearing.
+- **Evidence Packs** will be a ZIP holding a JSON manifest signed by Authoro (with a detached signature), a human-readable PDF that says the signed JSON is canonical, the hashes and issuer attestations, and key references. They're never described as legal certification.
