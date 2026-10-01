@@ -1,6 +1,7 @@
 import { parseWorkId } from "@authoro/core";
 import { db } from "@/db";
 import { apiError, handle, json, readJson, requireApiKey } from "@/lib/api/http";
+import { recordPresetsFromBody } from "@/lib/api/record-presets";
 import { registrationInputFromBody } from "@/lib/api/registration-input";
 import { recordAudit } from "@/lib/audit";
 import { getProfileByUserId } from "@/lib/profiles";
@@ -62,6 +63,7 @@ export async function POST(request: Request, { params }: RouteContext<"/api/v1/w
       );
     }
 
+    const presets = await recordPresetsFromBody(db, body, { userId: key.userId, headers });
     let prepared: Awaited<ReturnType<typeof prepareVersion>>;
     try {
       prepared = await prepareVersion(db, {
@@ -69,6 +71,7 @@ export async function POST(request: Request, { params }: RouteContext<"/api/v1/w
         profile,
         workPublicId: workId,
         registration: validation.data,
+        presets,
       });
     } catch (error) {
       if (!(error instanceof RegistrationError)) throw error;
@@ -107,6 +110,12 @@ export async function POST(request: Request, { params }: RouteContext<"/api/v1/w
         workId,
         version: versionNumber,
         status: "pending_attestation",
+        record: {
+          visibility: presets.access.visibility,
+          embargoUntil: presets.access.embargoUntil?.toISOString() ?? null,
+          showFingerprint: presets.access.embargoShowsFingerprint,
+          evidenceDisclosure: presets.evidencePreset,
+        },
         attestUrl: `${origin}/attest/${proofId}`,
         proofUrl: proofUrl(proofId, origin),
         message: `Prepared version ${versionNumber}. The author must open attestUrl, review the details and attest before the record is public.`,

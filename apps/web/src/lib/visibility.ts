@@ -2,6 +2,7 @@ import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { Database, Transaction } from "@/db/client";
 import { proofRecords, user, works, workVersions } from "@/db/schema";
 import { getPlan } from "./entitlements";
+import { isVisibility, type EvidencePreset, type Visibility } from "./visibility-labels";
 
 /**
  * Who can see a record and how much evidence detail it shows (decision 026).
@@ -10,48 +11,14 @@ import { getPlan } from "./entitlements";
  * after registration is a public record event (written by a database trigger).
  */
 
-export type Visibility = (typeof proofRecords.visibility.enumValues)[number];
-export type EvidencePreset = (typeof proofRecords.evidenceDisclosure.enumValues)[number];
-
-export const VISIBILITIES: Record<Visibility, { label: string; description: string }> = {
-  public: {
-    label: "Public",
-    description: "Anyone can look it up, and it's listed on your author page.",
-  },
-  unlisted: {
-    label: "Unlisted",
-    description: "Anyone with the link or ID can see it. It isn't listed or indexed by search engines.",
-  },
-  private: {
-    label: "Private",
-    description: "Only you see the details. Visitors see that a record exists, and nothing else.",
-  },
-};
-
-/** Evidence presets (PRD §8). Minimal hides content, not verifiability. */
-export const EVIDENCE_PRESETS: Record<EvidencePreset, { label: string; description: string }> = {
-  minimal: {
-    label: "Minimal",
-    description:
-      "Who supplied each piece of evidence, its links, hashes and status. Your note, AI uses and tools, and the details inside Proof Envelopes are hidden, on the record and in the API.",
-  },
-  standard: {
-    label: "Standard",
-    description: "Adds your note, AI uses and tools, and each Proof Envelope's main details.",
-  },
-  detailed: {
-    label: "Detailed",
-    description: "Adds every field each Proof Envelope carries, including nested statistics.",
-  },
-};
-
-export function isVisibility(value: unknown): value is Visibility {
-  return typeof value === "string" && Object.hasOwn(VISIBILITIES, value);
-}
-
-export function isEvidencePreset(value: unknown): value is EvidencePreset {
-  return typeof value === "string" && Object.hasOwn(EVIDENCE_PRESETS, value);
-}
+export {
+  EVIDENCE_PRESETS,
+  isEvidencePreset,
+  isVisibility,
+  VISIBILITIES,
+  type EvidencePreset,
+  type Visibility,
+} from "./visibility-labels";
 
 /**
  * What a visitor sees: the full record, an embargo notice, a restricted
@@ -253,8 +220,16 @@ export async function changeRecordAccess(
     proofId,
     userId,
     choice,
+    confirmedRestriction = false,
     now = new Date(),
-  }: { proofId: string; userId: string; choice: AccessChoice; now?: Date },
+  }: {
+    proofId: string;
+    userId: string;
+    choice: AccessChoice;
+    /** The author confirmed that restricting a published record leaves its provenance public. */
+    confirmedRestriction?: boolean;
+    now?: Date;
+  },
 ): Promise<{ changed: boolean }> {
   return db.transaction(async (tx) => {
     const record = await lockOwnedRecord(tx, proofId, userId, now);
@@ -269,6 +244,17 @@ export async function changeRecordAccess(
       (record.embargoUntil?.getTime() ?? null) === (embargoUntil?.getTime() ?? null) &&
       record.embargoShowsFingerprint === showsFingerprint;
     if (unchanged) return { changed: false };
+    if (
+      published &&
+      choice.visibility === "private" &&
+      record.visibility !== "private" &&
+      !confirmedRestriction
+    ) {
+      throw new VisibilityError(
+        "invalid",
+        "Confirm that you understand what visitors will still see of a restricted record.",
+      );
+    }
     if (choiceNeedsPro(choice) && (await getPlan(db, userId)) !== "pro") {
       throw new VisibilityError(
         "plan-required",

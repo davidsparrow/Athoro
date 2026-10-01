@@ -27,10 +27,7 @@ export function allAccountsPro(): boolean {
  * The account's current plan. Billing arrives in chunk 10; until then only
  * `AUTHORO_ALL_PRO` grants Pro.
  */
-export async function getPlan(_db: Database, _userId: string): Promise<Plan> {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- billing (chunk 10) reads the account's plan
+export async function getPlan(db: Database, userId: string): Promise<Plan> {
   return allAccountsPro() ? "pro" : "free";
-}
-
-export async function hasFeature(db: Database, userId: string, _feature: ProFeature): Promise<boolean> {
-  return (await getPlan(db, userId)) === "pro";
 }

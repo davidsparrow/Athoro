@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import {
   attestations,
@@ -12,14 +12,13 @@ import {
 } from "@/db/schema";
 import { PUBLIC_EVIDENCE_STATUSES } from "./evidence";
 import { buildProvenance } from "./provenance";
+import { embargoDue, publicAccess, releaseDueEmbargoes, type ReleasedRecord } from "./visibility";
 
-/**
- * Everything the public proof page shows for one record. Returns null for
- * unknown IDs and for records that were never attested; `private` records
- * are only returned to their owner.
- */
-export async function getPublicProof(db: Database, proofId: string, viewerId?: string | null) {
-  const [row] = await db
+/** Record events a visitor sees while an embargo holds: when it was registered and its schedule. */
+const EMBARGO_EVENTS = new Set(["registered", "embargo-changed"]);
+
+function loadRecordRow(db: Database, proofId: string) {
+  return db
     .select({ record: proofRecords, version: workVersions, work: works, profile: authorProfiles })
     .from(proofRecords)
     .innerJoin(workVersions, eq(workVersions.id, proofRecords.workVersionId))
@@ -27,11 +26,47 @@ export async function getPublicProof(db: Database, proofId: string, viewerId?: s
     .innerJoin(authorProfiles, eq(authorProfiles.id, works.authorProfileId))
     .where(eq(proofRecords.publicId, proofId))
     .limit(1);
+}
+
+function loadEvents(db: Database, proofRecordId: string) {
+  return db
+    .select({
+      eventType: recordEvents.eventType,
+      data: recordEvents.data,
+      createdAt: recordEvents.createdAt,
+    })
+    .from(recordEvents)
+    .where(eq(recordEvents.proofRecordId, proofRecordId))
+    .orderBy(asc(recordEvents.createdAt), asc(recordEvents.id));
+}
+
+/**
+ * Everything the public proof page shows for one record. Returns null for
+ * unknown IDs and for records that were never attested. A visitor to a
+ * private record gets a sealed view instead: an embargo notice, a restricted
+ * record's surviving provenance, or only that the record exists. An embargo
+ * whose time has come is released here, and `released` says so once.
+ */
+export async function getPublicProof(
+  db: Database,
+  proofId: string,
+  viewerId?: string | null,
+  now = new Date(),
+) {
+  let [row] = await loadRecordRow(db, proofId);
   if (!row) return null;
   const isOwner = Boolean(viewerId) && row.work.ownerId === viewerId;
   if (row.record.status === "pending_attestation")
     return isOwner ? { kind: "pending" as const, proofId } : null;
-  if (row.record.visibility === "private" && !isOwner) return null;
+
+  let released: ReleasedRecord | null = null;
+  if (embargoDue(row.record, now)) {
+    [released = null] = await releaseDueEmbargoes(db, { now, proofRecordId: row.record.id });
+    [row] = await loadRecordRow(db, proofId);
+    if (!row) return null;
+  }
+  const access = publicAccess(row.record);
+  if (access !== "full" && !isOwner) return getSealedProof(db, row, access);
 
   const [attestation, events, versions, pendingEvidence] = await Promise.all([
     db
@@ -44,15 +79,7 @@ export async function getPublicProof(db: Database, proofId: string, viewerId?: s
       .from(authorAttestations)
       .where(eq(authorAttestations.workVersionId, row.version.id))
       .limit(1),
-    db
-      .select({
-        eventType: recordEvents.eventType,
-        data: recordEvents.data,
-        createdAt: recordEvents.createdAt,
-      })
-      .from(recordEvents)
-      .where(eq(recordEvents.proofRecordId, row.record.id))
-      .orderBy(asc(recordEvents.createdAt), asc(recordEvents.id)),
+    loadEvents(db, row.record.id),
     db
       .select({
         workVersionId: workVersions.id,
@@ -70,8 +97,9 @@ export async function getPublicProof(db: Database, proofId: string, viewerId?: s
         and(
           eq(workVersions.workId, row.work.id),
           ne(proofRecords.status, "pending_attestation"),
-          // Private versions are listed only for their owner.
-          isOwner ? undefined : ne(proofRecords.visibility, "private"),
+          // Visitors see public versions and the one they're viewing; private
+          // and unlisted versions are listed only for their owner.
+          isOwner ? undefined : or(eq(proofRecords.visibility, "public"), eq(proofRecords.id, row.record.id)),
         ),
       )
       .orderBy(asc(workVersions.versionNumber)),
@@ -105,6 +133,9 @@ export async function getPublicProof(db: Database, proofId: string, viewerId?: s
   return {
     kind: "record" as const,
     isOwner,
+    /** What visitors see; the owner always sees the full record. */
+    access,
+    released,
     record: row.record,
     version: row.version,
     work: row.work,
@@ -124,14 +155,112 @@ export async function getPublicProof(db: Database, proofId: string, viewerId?: s
 
 export type PublicProof = Extract<Awaited<ReturnType<typeof getPublicProof>>, { kind: "record" }>;
 
-/** Minimal lookup for high-traffic routes such as the mark image. */
-export async function getProofStatus(db: Database, proofId: string) {
-  const [row] = await db
-    .select({ id: proofRecords.id, status: proofRecords.status, visibility: proofRecords.visibility })
-    .from(proofRecords)
-    .where(eq(proofRecords.publicId, proofId))
-    .limit(1);
-  return row ?? null;
+type RecordRow = NonNullable<Awaited<ReturnType<typeof loadRecordRow>>[number]>;
+
+/**
+ * What a visitor sees of a private record. Visibility can decrease disclosure
+ * but never erase provenance: a restricted record keeps its ID, timestamps,
+ * fingerprint and history; an embargoed one shows when it was registered,
+ * when it will be released, how many issuers reported on it and, if the
+ * author allows, its fingerprint; a record private from the start shows only
+ * that it exists.
+ */
+async function getSealedProof(
+  db: Database,
+  { record, version }: RecordRow,
+  access: "embargoed" | "restricted" | "private",
+) {
+  const base = { kind: "sealed" as const, access, proofId: record.publicId };
+  if (access === "private") return { ...base, sealed: null };
+
+  const fingerprint =
+    access === "restricted" || record.embargoShowsFingerprint
+      ? {
+          versionNumber: version.versionNumber,
+          contentHash: version.contentHash,
+          textHash: version.textHash,
+          textCanonicalization: version.textCanonicalization,
+        }
+      : null;
+  const [events, attestation, envelopes] = await Promise.all([
+    loadEvents(db, record.id),
+    access === "restricted"
+      ? db
+          .select({ attestationHash: authorAttestations.attestationHash })
+          .from(authorAttestations)
+          .where(eq(authorAttestations.workVersionId, version.id))
+          .limit(1)
+      : Promise.resolve([]),
+    access === "embargoed"
+      ? db
+          .select({ payload: attestations.payload })
+          .from(attestations)
+          .where(
+            and(
+              eq(attestations.workVersionId, version.id),
+              eq(attestations.claimType, "proof-envelope"),
+              eq(attestations.status, "active"),
+            ),
+          )
+      : Promise.resolve([]),
+  ]);
+  const restriction = events.findLast(
+    (event) =>
+      event.eventType === "visibility-changed" && (event.data as { to?: string } | null)?.to === "private",
+  );
+  return {
+    ...base,
+    sealed: {
+      status: record.status,
+      registeredAt: record.registeredAt!,
+      publishedAt: record.publishedAt,
+      embargoUntil: record.embargoUntil,
+      withdrawnAt: record.withdrawnAt,
+      withdrawnReason: record.withdrawnReason,
+      restrictedAt: restriction?.createdAt ?? null,
+      /** How the record was seen before it was restricted. */
+      previousVisibility: ((restriction?.data as { from?: string } | null)?.from ?? null) as
+        "public" | "unlisted" | null,
+      fingerprint,
+      attestationHash: attestation[0]?.attestationHash ?? null,
+      issuerCount:
+        access === "embargoed"
+          ? new Set(envelopes.map(({ payload }) => (payload as { issuer?: { id?: string } }).issuer?.id)).size
+          : null,
+      events:
+        access === "restricted" ? events : events.filter((event) => EMBARGO_EVENTS.has(event.eventType)),
+    },
+  };
+}
+
+export type SealedProof = Extract<Awaited<ReturnType<typeof getPublicProof>>, { kind: "sealed" }>;
+
+/**
+ * Minimal lookup for high-traffic routes such as the mark image, with what a
+ * visitor can see. Releases a due embargo like the record page does.
+ */
+export async function getProofStatus(db: Database, proofId: string, now = new Date()) {
+  const select = () =>
+    db
+      .select({
+        id: proofRecords.id,
+        status: proofRecords.status,
+        visibility: proofRecords.visibility,
+        publishedAt: proofRecords.publishedAt,
+        embargoUntil: proofRecords.embargoUntil,
+      })
+      .from(proofRecords)
+      .where(eq(proofRecords.publicId, proofId))
+      .limit(1);
+  let [row] = await select();
+  if (!row) return null;
+  let released: ReleasedRecord | null = null;
+  if (embargoDue(row, now)) {
+    [released = null] = await releaseDueEmbargoes(db, { now, proofRecordId: row.id });
+    [row] = await select();
+    if (!row) return null;
+  }
+  return { ...row, access: publicAccess(row), released };
 }
 
 export type MetricField = "markImpressions" | "markClicks" | "pageViews" | "verifications";

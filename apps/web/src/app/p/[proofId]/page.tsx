@@ -12,28 +12,35 @@ import {
   type ProofEnvelope,
   type WorkType,
 } from "@authoro/core";
-import type { Metadata } from "next";
+import type { Metadata, Route } from "next";
 import Link from "next/link";
 import { notFound, permanentRedirect, redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { after } from "next/server";
 import { cache, type ReactNode } from "react";
-import { AuthoroMark } from "@/components/authoro-mark";
 import { DocumentationLinks } from "@/components/documentation-links";
 import { buttonClass } from "@/components/ui";
 import { db } from "@/db";
+import { notifyEmbargoLifted } from "@/lib/email/notices";
+import { getPlan } from "@/lib/entitlements";
 import { formatBytes, formatDate, formatDateTime, formatNumber } from "@/lib/format";
 import { getMetricTotals, getPublicProof, incrementMetric, isLikelyBot, type PublicProof } from "@/lib/proof";
 import { describeSource, shownLinks } from "@/lib/provenance";
-import { isWithdrawalReason, WITHDRAWAL_REASONS } from "@/lib/registration";
+import { WITHDRAWAL_REASONS } from "@/lib/registration";
 import { getSession } from "@/lib/session";
 import { appOrigin, displayUrl, proofUrl } from "@/lib/urls";
+import { EVIDENCE_PRESETS, VISIBILITIES, type EvidencePreset } from "@/lib/visibility-labels";
 import { AddEvidenceForm } from "./add-evidence-form";
 import { EmbedPanel } from "./embed-panel";
+import { envelopeRows } from "./envelope-rows";
 import { ProvenanceHistory } from "./provenance-history";
+import { describeEvent } from "./record-history";
+import { Badge, Check, Hash, RecordKicker, Rows, Section } from "./record-ui";
 import { ReviewEvidence } from "./review-evidence";
 import { RevokeEvidenceForm } from "./revoke-evidence-form";
+import { SealedRecord } from "./sealed-record";
 import { VerifyCopy } from "./verify-copy";
+import { AccessForm, PresetForm } from "./visibility-forms";
 import { WithdrawForm } from "./withdraw-form";
 
 const loadProof = cache(async (proofId: string) => {
@@ -44,6 +51,14 @@ const loadProof = cache(async (proofId: string) => {
 export async function generateMetadata({ params }: PageProps<"/p/[proofId]">): Promise<Metadata> {
   const proofId = parseProofId(decodeURIComponent((await params).proofId));
   const proof = proofId ? await loadProof(proofId) : null;
+  if (proofId && proof?.kind === "sealed") {
+    return {
+      title: `Authoro record ${proofId}`,
+      description: `Authoro creation record ${proofId}. Its details aren't public.`,
+      alternates: { canonical: proofUrl(proofId) },
+      robots: { index: false },
+    };
+  }
   if (!proofId || proof?.kind !== "record") return { title: "Record not found" };
   const description = `Authoro creation record ${proofId} for “${proof.version.title}” by ${proof.author.displayName}: who attested to it, how it was made, and a way to check a copy.`;
   return {
@@ -73,6 +88,8 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
   if (!proof) notFound();
   if (proof.kind === "pending") redirect(`/attest/${proofId}`);
 
+  if (proof.kind === "sealed") return <SealedRecord proof={proof} />;
+
   const userAgent = (await headers()).get("user-agent");
   if (!proof.isOwner && !isLikelyBot(userAgent)) {
     after(async () => {
@@ -80,6 +97,8 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
       if (ref === "mark") await incrementMetric(db, proof.record.id, "markClicks").catch(() => {});
     });
   }
+  // This view released an embargo whose time had come; tell the author once.
+  if (proof.released) notifyEmbargoLifted(proof.released);
 
   const { record, version, work, author, evidence, authorAttestation, versions, pendingEvidence } = proof;
   // What the author attested to, and what was added to the record afterwards.
@@ -109,6 +128,9 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
   ]);
   const allEvidenceIntact = evidenceIntact.every(Boolean);
   const metrics = proof.isOwner ? (await getMetricTotals(db, [record.id])).get(record.id) : undefined;
+  const canUsePro = proof.isOwner ? (await getPlan(db, work.ownerId)) === "pro" : false;
+  const visibleProofIds = new Set(versions.map((v) => v.proofId));
+  const preset = record.evidenceDisclosure;
 
   // Point older records at the newest registered version (or the newest at all, if every later one was withdrawn).
   const newer = versions.filter((v) => v.versionNumber > version.versionNumber);
@@ -117,12 +139,7 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
   return (
     <article className="mx-auto w-full max-w-3xl px-4 py-12 sm:py-16">
       <header>
-        <div className="flex items-center justify-between gap-4 text-xs tracking-wide text-ink-muted uppercase">
-          <span className="flex items-center gap-2">
-            <AuthoroMark size={16} /> Creation record
-          </span>
-          <span className="font-mono normal-case">{proofId}</span>
-        </div>
+        <RecordKicker proofId={proofId} />
         <h1 className="mt-6 font-serif text-4xl leading-tight tracking-tight sm:text-5xl">{version.title}</h1>
         <p className="mt-4 text-ink-muted">
           {author.isPublic ? (
@@ -134,6 +151,7 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
           )}{" "}
           · {WORK_TYPES[work.workType as WorkType] ?? work.workType} · Registered{" "}
           {record.registeredAt ? formatDate(record.registeredAt) : "—"}
+          {record.visibility === "unlisted" ? " · Unlisted" : ""}
         </p>
         {version.canonicalUrl ? (
           <p className="mt-2 text-sm">
@@ -149,6 +167,22 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
         ) : null}
         {version.description ? <p className="mt-5 leading-relaxed">{version.description}</p> : null}
       </header>
+
+      {proof.isOwner && proof.access !== "full" ? (
+        <div role="status" className="mt-8 rounded-xl border border-accent/40 bg-paper-raised p-4 text-sm">
+          <p className="font-medium">Only you can see this record&apos;s details</p>
+          <p className="mt-1 text-ink-muted">
+            {proof.access === "embargoed"
+              ? `Visitors see that a record exists, when it was registered and that it will be released on ${formatDateTime(record.embargoUntil!)}${record.embargoShowsFingerprint ? ", with its fingerprint" : ""}.`
+              : proof.access === "restricted"
+                ? "Visitors see that it was restricted, with its ID, dates, fingerprint and history."
+                : "Visitors see only that a record exists for this ID."}{" "}
+            <a href="#visibility" className="text-ink underline underline-offset-4">
+              Change who can see it
+            </a>
+          </p>
+        </div>
+      ) : null}
 
       {record.status === "withdrawn" ? (
         <div role="status" className="mt-8 rounded-xl border border-caution/40 bg-caution-soft p-4 text-sm">
@@ -213,7 +247,7 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
                       Not public
                     </span>
                   </div>
-                  {envelope ? <Rows rows={envelopeRows(envelope, true)} /> : null}
+                  {envelope ? <Rows rows={envelopeRows(envelope, "detailed")} /> : null}
                   <DocumentationLinks links={source.links} supplier={source.supplier.name} />
                   <ReviewEvidence
                     proofId={proofId}
@@ -286,6 +320,7 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
               source={`Declared by ${author.displayName}`}
               label="Author supplied"
               revoked={disclosure.status === "revoked" ? disclosure.revokedAt : null}
+              sourceHref={`/p/${proofId}/evidence/${disclosure.id}`}
             >
               <Rows
                 rows={[
@@ -293,15 +328,15 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
                     "Method",
                     disclosurePayload.methods.map((m) => CREATION_METHODS[m]?.label ?? m).join(", "),
                   ],
-                  record.evidenceDisclosure !== "minimal" && disclosurePayload.aiUses?.length
+                  preset !== "minimal" && disclosurePayload.aiUses?.length
                     ? ["AI helped with", disclosurePayload.aiUses.map((u) => AI_USES[u] ?? u).join(", ")]
                     : null,
-                  record.evidenceDisclosure !== "minimal" && disclosurePayload.aiTools?.length
+                  preset !== "minimal" && disclosurePayload.aiTools?.length
                     ? ["AI tools", disclosurePayload.aiTools.join(", ")]
                     : null,
                 ]}
               />
-              {disclosurePayload.note && record.evidenceDisclosure !== "minimal" ? (
+              {disclosurePayload.note && preset !== "minimal" ? (
                 <blockquote className="mt-4 border-l-2 border-line pl-4 font-serif text-lg leading-relaxed">
                   {disclosurePayload.note}
                 </blockquote>
@@ -314,7 +349,8 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
             <EnvelopeCard
               key={item.id}
               item={item}
-              detailed={record.evidenceDisclosure !== "minimal"}
+              preset={preset}
+              proofId={proofId}
               source={`${EVIDENCE_CLASSES[item.evidenceClass].label} · submitted by the author`}
             />
           ))}
@@ -347,7 +383,8 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
                   <EnvelopeCard
                     key={item.id}
                     item={item}
-                    detailed={record.evidenceDisclosure !== "minimal"}
+                    preset={preset}
+                    proofId={proofId}
                     source={`${EVIDENCE_CLASSES[item.evidenceClass].label} · ${added}`}
                     footer={revoke}
                   />
@@ -359,6 +396,7 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
                     label="Author supplied"
                     revoked={item.status === "revoked" ? item.revokedAt : null}
                     revocationNote={item.revocationReason}
+                    sourceHref={`/p/${proofId}/evidence/${item.id}`}
                   >
                     <DocumentationLinks
                       links={shownLinks(item.payload)}
@@ -373,6 +411,13 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
           </div>
         ) : null}
 
+        {preset === "minimal" ? (
+          <p className="mt-6 text-xs leading-relaxed text-ink-muted">
+            {author.displayName} chose Minimal evidence detail: the contents of their statements and of each
+            Proof Envelope aren&apos;t shown, here or in the API. Who supplied each piece, its links and its
+            hash checks stay visible.
+          </p>
+        ) : null}
         {hasLinks ? (
           <p className="mt-6 text-xs leading-relaxed text-ink-muted">
             Documentation links lead to the sites named, supplied by whoever submitted the evidence. Authoro
@@ -436,7 +481,8 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
               authorAttestation
                 ? ["Statement", `Author attestation v${authorAttestation.statementVersion}`]
                 : null,
-              ...proof.events.map(describeEvent),
+              ["Evidence detail", EVIDENCE_PRESETS[preset].label],
+              ...proof.events.map((event) => describeEvent(event, visibleProofIds)),
             ]}
           />
           <p className="mt-4 text-xs text-ink-muted">
@@ -457,6 +503,16 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
             {record.status === "withdrawn" ? (
               <p className="mt-1 text-sm text-ink-muted">
                 This record is withdrawn, so its mark now says so wherever it&apos;s embedded.
+              </p>
+            ) : proof.access !== "full" ? (
+              <p className="mt-1 text-sm text-ink-muted">
+                While visitors can&apos;t see this record&apos;s details, its mark says{" "}
+                {proof.access === "embargoed"
+                  ? "“embargoed”"
+                  : proof.access === "restricted"
+                    ? "“restricted”"
+                    : "“private”"}{" "}
+                wherever it&apos;s embedded. Make the record public or unlisted to use the full mark.
               </p>
             ) : (
               <>
@@ -498,6 +554,38 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
                 </Link>
               </div>
               {record.status === "registered" ? (
+                <div id="visibility" className="scroll-mt-8 py-6">
+                  <h3 className="font-medium">Who can see this record</h3>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    Now:{" "}
+                    {proof.access === "restricted" ? "Restricted" : VISIBILITIES[record.visibility].label}
+                    {proof.access === "embargoed"
+                      ? `, released automatically on ${formatDateTime(record.embargoUntil!)}`
+                      : ""}
+                    . Every change is recorded in the record&apos;s public history. Making it public is always
+                    free.
+                  </p>
+                  <AccessForm
+                    proofId={proofId}
+                    defaultVisibility={record.visibility}
+                    defaultEmbargoUntil={record.embargoUntil?.toISOString() ?? null}
+                    defaultShowFingerprint={record.embargoShowsFingerprint}
+                    canUsePro={canUsePro}
+                    publishedAt={record.publishedAt?.toISOString() ?? null}
+                  />
+                </div>
+              ) : null}
+              {record.status === "registered" ? (
+                <div className="py-6">
+                  <h3 className="font-medium">Evidence detail</h3>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    Now: {EVIDENCE_PRESETS[preset].label}. Changes are recorded in the record&apos;s public
+                    history.
+                  </p>
+                  <PresetForm proofId={proofId} defaultPreset={preset} />
+                </div>
+              ) : null}
+              {record.status === "registered" ? (
                 <div className="py-6">
                   <h3 className="font-medium">Add documentation or evidence</h3>
                   <p className="mt-1 text-sm text-ink-muted">
@@ -534,102 +622,14 @@ export default async function ProofPage({ params, searchParams }: PageProps<"/p/
   );
 }
 
-/** A plain-English line for each entry in the record's history. */
-function describeEvent(event: PublicProof["events"][number]): [string, ReactNode] {
-  const data = (event.data ?? {}) as Record<string, unknown>;
-  const at = formatDateTime(event.createdAt);
-  switch (event.eventType) {
-    case "registered":
-      return ["Registered", at];
-    case "newer-version-registered": {
-      const newerId = typeof data.proofId === "string" ? data.proofId : null;
-      return [
-        "Newer version",
-        <>
-          Version {String(data.versionNumber ?? "")} registered
-          {newerId ? (
-            <>
-              {" "}
-              as{" "}
-              <Link href={`/p/${newerId}`} className="font-mono underline underline-offset-4">
-                {newerId}
-              </Link>
-            </>
-          ) : null}
-          , {at}
-        </>,
-      ];
-    }
-    case "evidence-added":
-      return [
-        "Evidence added",
-        `${data.claimType === "proof-envelope" ? "A Proof Envelope" : "Documentation links"}${data.via === "api" ? ", sent by an integration and approved by the author" : ", by the author"}, ${at}`,
-      ];
-    case "evidence-revoked":
-      return [
-        "Evidence revoked",
-        `${data.claimType === "proof-envelope" ? "A Proof Envelope" : "Documentation links"}, by the author, ${at}${typeof data.note === "string" && data.note ? `. Note: ${data.note}` : ""}`,
-      ];
-    case "withdrawn":
-      return [
-        "Withdrawn",
-        `By the author, ${at}${isWithdrawalReason(data.reason) ? `. Reason: ${WITHDRAWAL_REASONS[data.reason]}` : ""}`,
-      ];
-    default:
-      return [humanize(event.eventType), at];
-  }
-}
-
-function humanize(key: string): string {
-  const spaced = key
-    .replace(/[-_]+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .toLowerCase();
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
-
-function Section({ title, id, children }: { title: string; id?: string; children: ReactNode }) {
-  return (
-    <section id={id} className="mt-12 scroll-mt-8">
-      <h2 className="mb-5 font-serif text-2xl tracking-tight">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Badge({ children, tone }: { children: ReactNode; tone?: "accent" }) {
-  return (
-    <li
-      className={`rounded-full border px-3 py-1 ${tone === "accent" ? "border-accent/30 bg-accent-soft" : "border-line bg-paper-raised text-ink-muted"}`}
-    >
-      {children}
-    </li>
-  );
-}
-
-function Check({ ok, title, children }: { ok: boolean; title: string; children: ReactNode }) {
-  return (
-    <li className="flex gap-3">
-      <span
-        aria-hidden
-        className={`mt-0.5 font-medium ${ok ? "text-accent" : "text-red-700 dark:text-red-400"}`}
-      >
-        {ok ? "✓" : "✕"}
-      </span>
-      <div>
-        <p className="font-medium">{title}</p>
-        <p className="mt-0.5 text-sm text-ink-muted">{children}</p>
-      </div>
-    </li>
-  );
-}
-
 function EvidenceCard(props: {
   title: string;
   source: string;
   label: string;
   revoked: Date | null;
   revocationNote?: string | null;
+  /** Authoro's page for this evidence: `/p/<id>/evidence/<evidenceId>`. */
+  sourceHref?: string;
   children: ReactNode;
 }) {
   return (
@@ -650,49 +650,31 @@ function EvidenceCard(props: {
         </p>
       ) : null}
       <div className="mt-2">{props.children}</div>
+      {props.sourceHref ? (
+        <p className="mt-4 text-sm">
+          <Link href={props.sourceHref as Route} className="font-medium underline-offset-4 hover:underline">
+            View source evidence →
+          </Link>
+        </p>
+      ) : null}
     </div>
   );
 }
 
 type EvidenceItem = PublicProof["evidence"][number];
 
-/** An envelope's method, period and, unless the record is minimal, its provider-specific details. */
-function envelopeRows(envelope: ProofEnvelope, detailed: boolean): ([string, ReactNode] | null)[] {
-  const details = Object.entries(envelope.evidence)
-    .filter(
-      ([key, value]) =>
-        key !== "class" && key !== "method" && ["string", "number", "boolean"].includes(typeof value),
-    )
-    .map(([key, value]): [string, ReactNode] => [
-      humanize(key),
-      typeof value === "number" ? formatNumber(value) : String(value),
-    ]);
-  const { startedAt, completedAt } = envelope.timeline ?? {};
-  return [
-    ["Method", humanize(envelope.evidence.method)],
-    startedAt || completedAt
-      ? [
-          "Period",
-          [startedAt, completedAt]
-            .filter(Boolean)
-            .map((t) => formatDate(t!))
-            .join(" – "),
-        ]
-      : null,
-    ...(detailed ? details : []),
-  ];
-}
-
 /** A Proof Envelope, attributed to the organization it names. */
 function EnvelopeCard({
   item,
   source,
-  detailed,
+  preset,
+  proofId,
   footer,
 }: {
   item: EvidenceItem;
   source: string;
-  detailed: boolean;
+  preset: EvidencePreset;
+  proofId: string;
   footer?: ReactNode;
 }) {
   const envelope = item.payload as ProofEnvelope;
@@ -700,11 +682,12 @@ function EnvelopeCard({
     <EvidenceCard
       title={`Reported by ${envelope.issuer.name}`}
       source={source}
-      label={item.signatureStatus === "valid" ? "Signature verified" : "Unverified"}
+      label={item.signatureStatus === "valid" ? "✓ Signature valid" : "Unverified"}
       revoked={item.status === "revoked" ? item.revokedAt : null}
       revocationNote={item.revocationReason}
+      sourceHref={`/p/${proofId}/evidence/${item.id}`}
     >
-      <Rows rows={envelopeRows(envelope, detailed)} />
+      <Rows rows={envelopeRows(envelope, preset)} />
       <DocumentationLinks links={shownLinks(envelope)} supplier={envelope.issuer.name} />
       <p className="mt-4 text-xs text-ink-muted">
         {envelope.issuer.name}&apos;s signature{" "}
@@ -714,25 +697,6 @@ function EnvelopeCard({
       {footer}
     </EvidenceCard>
   );
-}
-
-function Rows({ rows }: { rows: ([string, ReactNode] | null)[] }) {
-  return (
-    <dl className="mt-3 space-y-2 text-sm">
-      {rows
-        .filter((row): row is [string, ReactNode] => row !== null)
-        .map(([label, value], index) => (
-          <div key={`${label}-${index}`} className="grid gap-1 sm:grid-cols-[10rem_1fr]">
-            <dt className="text-ink-muted">{label}</dt>
-            <dd className="break-words">{value}</dd>
-          </div>
-        ))}
-    </dl>
-  );
-}
-
-function Hash({ value }: { value: string }) {
-  return <code className="font-mono text-xs break-all">{value}</code>;
 }
 
 function Stat({ label, value }: { label: string; value: number }) {

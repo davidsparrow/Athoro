@@ -156,3 +156,27 @@ export function evidenceSubmittedEmail(
     }),
   };
 }
+
+/** Tells the author that an embargoed record was released, as scheduled. */
+export function embargoLiftedEmail(
+  to: string,
+  name: string | null | undefined,
+  released: { proofId: string; title: string; versionNumber: number; scheduledFor: Date; url: string },
+): EmailMessage {
+  const subject = `Now public: ${released.title}`;
+  const intro = `The embargo on version ${released.versionNumber} of “${released.title}” (${released.proofId}) lifted as scheduled. Its record is now public, and the release is recorded in its history.`;
+  const outro =
+    "You can still restrict the record's details, but not unpublish it: its link keeps working and shows its history.";
+  return {
+    to,
+    subject,
+    text: `${greeting(name)}\n\n${intro}\n\n${released.url}\n\n${outro}`,
+    html: layout({
+      heading: "Your record is now public",
+      intro,
+      action: "View the record",
+      url: released.url,
+      outro,
+    }),
+  };
+}

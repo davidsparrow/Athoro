@@ -68,6 +68,15 @@ function randomSalt(): string {
   return toHex(bytes);
 }
 
+/**
+ * Who should see a prepared record and how much evidence it shows. The author
+ * confirms or changes these when attesting.
+ */
+export interface RecordPresets {
+  access: AccessChoice;
+  evidencePreset: EvidencePreset;
+}
+
 /** Inserts a pending version with its proof record and author-supplied evidence. */
 async function insertPendingVersion(
   tx: Transaction,
@@ -77,12 +86,14 @@ async function insertPendingVersion(
     userId,
     profile,
     registration,
+    presets,
   }: {
     workId: string;
     versionNumber: number;
     userId: string;
     profile: AuthorProfile;
     registration: ValidRegistration;
+    presets?: RecordPresets;
   },
 ): Promise<string> {
   const { work, document, disclosure, envelopes } = registration;
@@ -106,7 +117,18 @@ async function insertPendingVersion(
     .returning();
   const [record] = await tx
     .insert(proofRecords)
-    .values({ publicId: generateProofId(), workVersionId: version!.id })
+    .values({
+      publicId: generateProofId(),
+      workVersionId: version!.id,
+      ...(presets
+        ? {
+            visibility: presets.access.visibility,
+            embargoUntil: presets.access.embargoUntil,
+            embargoShowsFingerprint: presets.access.embargoShowsFingerprint,
+            evidenceDisclosure: presets.evidencePreset,
+          }
+        : {}),
+    })
     .returning();
 
   await tx.insert(attestations).values({
@@ -150,7 +172,8 @@ export async function prepareRegistration(
     userId,
     profile,
     registration,
-  }: { userId: string; profile: AuthorProfile; registration: ValidRegistration },
+    presets,
+  }: { userId: string; profile: AuthorProfile; registration: ValidRegistration; presets?: RecordPresets },
 ): Promise<{ proofId: string; workId: string }> {
   const { work } = registration;
   return withFreshIds(() =>
@@ -173,6 +196,7 @@ export async function prepareRegistration(
         userId,
         profile,
         registration,
+        presets,
       });
       return { proofId, workId: createdWork!.publicId };
     }),
@@ -191,7 +215,14 @@ export async function prepareVersion(
     profile,
     workPublicId,
     registration,
-  }: { userId: string; profile: AuthorProfile; workPublicId: string; registration: ValidRegistration },
+    presets,
+  }: {
+    userId: string;
+    profile: AuthorProfile;
+    workPublicId: string;
+    registration: ValidRegistration;
+    presets?: RecordPresets;
+  },
 ): Promise<{ proofId: string; workId: string; versionNumber: number }> {
   return withFreshIds(() =>
     db.transaction(async (tx) => {
@@ -243,6 +274,7 @@ export async function prepareVersion(
           ...registration,
           work: { ...registration.work, workType: work.workType as WorkType },
         },
+        presets,
       });
       return { proofId, workId: work.publicId, versionNumber };
     }),
@@ -524,6 +556,9 @@ export async function listWorksForUser(db: Database, userId: string) {
       proofId: proofRecords.publicId,
       status: proofRecords.status,
       registeredAt: proofRecords.registeredAt,
+      visibility: proofRecords.visibility,
+      publishedAt: proofRecords.publishedAt,
+      embargoUntil: proofRecords.embargoUntil,
     })
     .from(works)
     .innerJoin(workVersions, eq(workVersions.workId, works.id))

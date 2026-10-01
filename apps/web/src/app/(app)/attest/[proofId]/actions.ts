@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { recordAudit } from "@/lib/audit";
 import { discardPendingRegistration, finalizeRegistration, RegistrationError } from "@/lib/registration";
 import { requireAuthor } from "@/lib/session";
+import { isEvidencePreset, parseAccessChoice } from "@/lib/visibility";
 
 export interface AttestState {
   error?: string;
@@ -21,12 +22,18 @@ export async function attestAction(
   if (!proofId) return { error: "Registration not found." };
   const { session } = await requireAuthor(`/attest/${proofId}`);
   if (formData.get("agree") !== "on") return { error: "Tick the box to confirm your attestation." };
+  const access = parseAccessChoice(formData);
+  if (!access) return { error: "Choose who can see this record." };
+  const evidencePreset = formData.get("evidenceDisclosure");
+  if (!isEvidencePreset(evidencePreset)) return { error: "Choose how much evidence detail to show." };
 
   try {
     const { attestationHash } = await finalizeRegistration(db, {
       proofId,
       userId: session.user.id,
       typedName: String(formData.get("typedName") ?? ""),
+      access,
+      evidencePreset,
     });
     await recordAudit({
       actorType: "user",
@@ -34,7 +41,7 @@ export async function attestAction(
       action: "registration.attested",
       targetType: "proof_record",
       targetId: proofId,
-      metadata: { attestationHash },
+      metadata: { attestationHash, visibility: access.visibility, evidencePreset },
       headers: await headers(),
     });
   } catch (error) {

@@ -24,6 +24,7 @@ export type ApiErrorCode =
   | "unauthorized"
   | "rate_limited"
   | "profile_required"
+  | "plan_required"
   | "draft_exists"
   | "unchanged"
   | "not_registered"

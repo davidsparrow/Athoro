@@ -45,10 +45,39 @@ export async function POST(request: Request) {
       if (!proofId)
         return apiError(400, "invalid_id", "That isn't an Authoro ID (e.g. AU-7K3F92).", { headers });
       const proof = await getPublicProof(db, proofId);
-      if (proof?.kind !== "record") {
+      const hashed = Boolean(contentHash || textHash);
+      if (!proof || proof.kind === "pending") {
         return json({ proof: null, valid: false, match: null }, { headers });
       }
-      const hashed = Boolean(contentHash || textHash);
+      if (proof.kind === "sealed") {
+        // Details aren't public: check against the fingerprint only if the record still shows it.
+        const { sealed } = proof;
+        const fingerprint = sealed?.fingerprint ?? null;
+        const result = hashed && fingerprint ? compareFingerprints(fingerprint, candidate) : null;
+        return json(
+          {
+            proof: {
+              id: proofId,
+              status: sealed?.status ?? null,
+              access: proof.access,
+              url: proofUrl(proofId, origin),
+            },
+            valid: sealed ? sealed.status === "registered" : null,
+            match: result
+              ? result.matched
+                ? {
+                    matched: true,
+                    method: result.method,
+                    proofId,
+                    version: fingerprint!.versionNumber,
+                    sameVersion: true,
+                  }
+                : { matched: false }
+              : null,
+          },
+          { headers },
+        );
+      }
       const versions = [...proof.versions].sort((a, b) =>
         a.proofId === proofId ? -1 : b.proofId === proofId ? 1 : b.versionNumber - a.versionNumber,
       );
@@ -59,7 +88,7 @@ export async function POST(request: Request) {
         : undefined;
       return json(
         {
-          proof: { id: proofId, status: proof.record.status, url: proofUrl(proofId, origin) },
+          proof: { id: proofId, status: proof.record.status, access: "full", url: proofUrl(proofId, origin) },
           valid: proof.record.status === "registered",
           match: hashed
             ? hit?.result.matched

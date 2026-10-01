@@ -23,8 +23,16 @@ const THEMES = {
 const SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
 const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
 
+/** Widths of each status word at 10.5px semibold, pinned with textLength because images can't load fonts. */
+const STATUS_WIDTHS: Record<Exclude<MarkStatus, "registered">, number> = {
+  withdrawn: 52,
+  restricted: 53,
+  embargoed: 57,
+  private: 38,
+};
+
 function glyph(x: number, y: number, size: number, theme: MarkTheme, status: MarkStatus): string {
-  const colors = status === "withdrawn" ? THEMES[theme].withdrawnMark : THEMES[theme].mark;
+  const colors = status === "registered" ? THEMES[theme].mark : THEMES[theme].withdrawnMark;
   return `<g transform="translate(${x} ${y}) scale(${size / 32})" fill="none" stroke-linecap="round" stroke-linejoin="round">${solidMarkSvg(colors)}</g>`;
 }
 
@@ -32,7 +40,9 @@ function glyph(x: number, y: number, size: number, theme: MarkTheme, status: Mar
  * The embeddable Authoro Mark. Only the validated proof ID is interpolated, so
  * no user-supplied text ever reaches the SVG. `textLength` pins text widths
  * because images can't load web fonts. A withdrawn record's mark is muted,
- * loses its check and says "withdrawn" after the ID.
+ * loses its check and says "withdrawn" after the ID; so does the mark of a
+ * record whose details aren't public, saying "restricted", "embargoed" or
+ * "private".
  */
 export function renderMarkSvg(
   proofId: string,
@@ -41,8 +51,8 @@ export function renderMarkSvg(
   status: MarkStatus = "registered",
 ): string {
   const colors = THEMES[theme];
-  const withdrawn = status === "withdrawn";
-  const label = `Authoro creation record ${proofId}${withdrawn ? " (withdrawn)" : ""}`;
+  const muted = status !== "registered";
+  const label = `Authoro creation record ${proofId}${muted ? ` (${status})` : ""}`;
   if (style === "icon") {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" role="img" aria-label="${label}"><title>${label}</title>${glyph(0, 0, 20, theme, status)}</svg>`;
   }
@@ -51,18 +61,18 @@ export function renderMarkSvg(
   // "· withdrawn": a 5px gap, a dot, another 5px gap, then the word.
   const dotX = idX + idWidth + 5 + 1.2;
   const statusX = dotX + 1.2 + 5;
-  const statusWidth = 52;
-  const width = Math.round((withdrawn ? statusX + statusWidth : idX + idWidth) + 7);
-  const statusText = withdrawn
+  const statusWidth = muted ? STATUS_WIDTHS[status] : 0;
+  const width = Math.round((muted ? statusX + statusWidth : idX + idWidth) + 7);
+  const statusText = muted
     ? `
 <circle cx="${dotX}" cy="10" r="1.2" fill="${colors.muted}"/>
-<text x="${statusX}" y="13.9" font-family="${SANS}" font-size="10.5" font-weight="600" fill="${colors.ink}" textLength="${statusWidth}" lengthAdjust="spacingAndGlyphs">withdrawn</text>`
+<text x="${statusX}" y="13.9" font-family="${SANS}" font-size="10.5" font-weight="600" fill="${colors.ink}" textLength="${statusWidth}" lengthAdjust="spacingAndGlyphs">${status}</text>`
     : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="20" viewBox="0 0 ${width} 20" role="img" aria-label="${label}">
 <title>${label}</title>
 <rect x="0.5" y="0.5" width="${width - 1}" height="19" rx="9.5" fill="${colors.background}" stroke="${colors.border}"/>
 ${glyph(3, 3, 14, theme, status)}
-<text x="23" y="13.9" font-family="${SANS}" font-size="11" font-weight="600" fill="${withdrawn ? colors.muted : colors.ink}" textLength="43" lengthAdjust="spacingAndGlyphs">Authoro</text>
+<text x="23" y="13.9" font-family="${SANS}" font-size="11" font-weight="600" fill="${muted ? colors.muted : colors.ink}" textLength="43" lengthAdjust="spacingAndGlyphs">Authoro</text>
 <text x="${idX}" y="13.9" font-family="${MONO}" font-size="10.5" fill="${colors.muted}" textLength="${idWidth}" lengthAdjust="spacingAndGlyphs">${proofId}</text>${statusText}
 </svg>`;
 }

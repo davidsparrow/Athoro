@@ -50,6 +50,15 @@ describe("renderMarkSvg", () => {
     expect(icon).not.toContain(SOLID_MARK.check);
     expect(icon).toContain(`fill="${WITHDRAWN_MARK_COLORS.dark.disc}"`);
   });
+
+  it("says when a record's details aren't public", () => {
+    for (const status of ["restricted", "embargoed", "private"] as const) {
+      const badge = renderMarkSvg("AU-7K3F92", "badge", "dark", status);
+      expect(badge).toContain(`<title>Authoro creation record AU-7K3F92 (${status})</title>`);
+      expect(badge).toContain(`>${status}</text>`);
+      expect(badge).not.toContain(SOLID_MARK.check);
+    }
+  });
 });
 
 describe("mark geometry", () => {

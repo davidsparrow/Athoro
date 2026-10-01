@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { apiError, handle, json, readJson, requireApiKey } from "@/lib/api/http";
+import { recordPresetsFromBody } from "@/lib/api/record-presets";
 import { registrationInputFromBody } from "@/lib/api/registration-input";
 import { recordAudit } from "@/lib/audit";
 import { getProfileByUserId } from "@/lib/profiles";
@@ -36,10 +37,12 @@ export async function POST(request: Request) {
       );
     }
 
+    const presets = await recordPresetsFromBody(db, body, { userId: key.userId, headers });
     const { proofId, workId } = await prepareRegistration(db, {
       userId: key.userId,
       profile,
       registration: validation.data,
+      presets,
     });
     await recordAudit({
       actorType: "api_key",
@@ -47,7 +50,12 @@ export async function POST(request: Request) {
       action: "registration.prepared",
       targetType: "proof_record",
       targetId: proofId,
-      metadata: { workId, userId: key.userId, envelopes: validation.data.envelopes.length },
+      metadata: {
+        workId,
+        userId: key.userId,
+        envelopes: validation.data.envelopes.length,
+        visibility: presets.access.visibility,
+      },
       headers: request.headers,
     });
 
@@ -59,6 +67,12 @@ export async function POST(request: Request) {
         workId,
         version: 1,
         status: "pending_attestation",
+        record: {
+          visibility: presets.access.visibility,
+          embargoUntil: presets.access.embargoUntil?.toISOString() ?? null,
+          showFingerprint: presets.access.embargoShowsFingerprint,
+          evidenceDisclosure: presets.evidencePreset,
+        },
         attestUrl: `${origin}/attest/${proofId}`,
         proofUrl: proofUrl(proofId, origin),
         message:
@@ -84,6 +98,7 @@ export async function GET(request: Request) {
           type: work.workType,
           version: work.versionNumber,
           status: work.status,
+          visibility: work.visibility,
           registeredAt: work.registeredAt?.toISOString() ?? null,
           url:
             work.status === "pending_attestation"
